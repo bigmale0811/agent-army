@@ -17,14 +17,29 @@ def setup_telegram(context: Dict) -> Dict:
     telegram_path = _find_telegram_bot()
 
     if not telegram_path:
-        print_warn("未偵測到 claude-code-telegram")
-        if ask_yes_no("要現在 clone 嗎？"):
-            telegram_path = _clone_telegram_bot(context)
-            if not telegram_path:
-                return context
+        print_warn("未自動偵測到 claude-code-telegram")
+        print_info("如果已經安裝，請輸入路徑；如果還沒安裝，直接按 Enter 跳過")
+        manual_path = ask_input("claude-code-telegram 路徑（留空跳過）")
+        if manual_path:
+            manual = Path(manual_path)
+            if (manual / "src").exists():
+                telegram_path = manual
+            else:
+                print_warn(f"路徑 {manual_path} 下找不到 src/ 目錄")
+                if ask_yes_no("要從 GitHub clone 嗎？"):
+                    telegram_path = _clone_telegram_bot(context)
+                    if not telegram_path:
+                        return context
+                else:
+                    return context
         else:
-            print_info("略過 Telegram Bot 設定")
-            return context
+            if ask_yes_no("要從 GitHub clone 嗎？", default=False):
+                telegram_path = _clone_telegram_bot(context)
+                if not telegram_path:
+                    return context
+            else:
+                print_info("略過。之後可執行 python setup.py --add-telegram")
+                return context
 
     print_ok(f"找到 claude-code-telegram：{telegram_path}")
 
@@ -73,8 +88,10 @@ def _find_telegram_bot() -> Path | None:
     """搜尋 claude-code-telegram 的安裝位置。"""
     common_paths = [
         Path("D:/Projects/claude-code-telegram"),
+        Path("C:/Projects/claude-code-telegram"),
         Path.home() / "Projects" / "claude-code-telegram",
         Path.cwd().parent / "claude-code-telegram",
+        Path.cwd() / "claude-code-telegram",
     ]
     for path in common_paths:
         if (path / "src").exists():
