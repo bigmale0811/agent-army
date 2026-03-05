@@ -11,7 +11,7 @@ def setup_telegram(context: Dict) -> Dict:
     from .wizard import ask_input, ask_yes_no, print_fail, print_info, print_ok, print_warn
 
     print_info("Telegram Bot 需要 claude-code-telegram 套件")
-    print_info("GitHub：https://github.com/anthropics/claude-code-telegram")
+    print_info("GitHub：https://github.com/bigmale0811/claude-code-telegram")
 
     # 檢查 claude-code-telegram 是否已安裝
     telegram_path = _find_telegram_bot()
@@ -107,12 +107,15 @@ def _clone_telegram_bot(context: Dict) -> Path | None:
     target = ask_input("clone 到哪裡", default=default_path)
     target_path = Path(target)
 
+    default_repo = "https://github.com/bigmale0811/claude-code-telegram.git"
+    repo_url = ask_input("Git repo URL", default=default_repo)
+
     print_info("正在 clone...")
     try:
         result = subprocess.run(
             [
                 "git", "clone",
-                "https://github.com/anthropics/claude-code-telegram.git",
+                repo_url,
                 str(target_path),
             ],
             capture_output=True,
