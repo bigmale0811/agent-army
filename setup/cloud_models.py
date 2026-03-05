@@ -130,14 +130,10 @@ def _ask_api_key(provider_name: str, env_var: str) -> str:
     if provider_name in links:
         print_info(f"取得 API key：{links[provider_name]}")
 
-    try:
-        import getpass
-        api_key = getpass.getpass(f"  請輸入 {provider_name} API Key：")
-    except Exception:
-        # 如果 getpass 不可用，使用一般輸入
-        api_key = input(f"  請輸入 {provider_name} API Key：").strip()
+    # 直接用一般輸入（getpass 在部分 Windows 終端會卡住）
+    api_key = input(f"  請輸入 {provider_name} API Key：").strip()
 
-    return api_key.strip()
+    return api_key
 
 
 def _test_provider_connection(
