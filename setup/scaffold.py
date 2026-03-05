@@ -325,3 +325,23 @@ Thumbs.db
 """,
         encoding="utf-8",
     )
+
+
+def _generate_env_template(project_path: Path) -> None:
+    """產生 .env 模板檔案。"""
+    env_path = project_path / ".env"
+    if env_path.exists():
+        return  # 不覆蓋現有的
+
+    env_path.write_text(
+        """# === Cloud LLM API Keys（依需求填入）===
+# OPENAI_API_KEY=sk-xxx
+# DEEPSEEK_API_KEY=sk-xxx
+# GROQ_API_KEY=gsk_xxx
+# GOOGLE_API_KEY=xxx
+
+# === 預設 LLM Provider ===
+# DEFAULT_LLM_PROVIDER=openai
+""",
+        encoding="utf-8",
+    )
