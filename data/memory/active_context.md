@@ -1,35 +1,43 @@
 # 🧠 Active Context
-更新：2026-03-05 10:30
+更新：2026-03-06
 
 ## 目前進行中
-- Singer Agent v0.3 端對端測試（ComfyUI 已啟動，素材已確認存在）
+- **Setup Wizard 品質補救**：使用者指出開發跳過 ECC 流程，需要補跑測試和審查
+- **claude-code-telegram 部署問題**：新電腦 clone 失敗，repo 可能不在 GitHub
 
 ## 最近完成
+- **✅ LLM 雲端模組** (`src/llm/`)：
+  - 支援 OpenAI / DeepSeek / Groq / Together（OpenAI-compatible）+ Gemini
+  - 32 個測試通過
+  - CLI：`python -m src.llm.cli --list/--test/--prompt/--chat`
+- **✅ Setup Wizard** (`setup/`)：
+  - 7 步安裝精靈（既有專案自動偵測後減為 5 步）
+  - 修復 5 個 bug：_generate_env_template、getpass 凍結、重複問路徑、Telegram 搜尋路徑、clone URL
+  - 14 個測試通過
 - **✅ 修復「完成後不通知」問題**（claude-code-telegram）：
-  - `.env`：`CLAUDE_MAX_TURNS=50`（原預設 10）、`CLAUDE_TIMEOUT_SECONDS=900`（原 600）
-  - `sdk_integration.py`：修復空回應處理 — 合成完成摘要（工具呼叫數量 + 工具名稱 + max_turns 提示）
-  - 根因：max_turns=10 太低 → Claude 耗盡 turns 做工具呼叫 → 空回應 → "(No content to display)"
-- **✅ ECC 流程全面安裝與審查**：
-  - 安裝 14 個 Rules（9 common + 5 python）到 `.claude/rules/`
-  - 補齊 PostToolUse hook（PR URL 顯示）
-  - 建立標準開發流程寫入 CLAUDE.md（Phase 0-7）
-  - 確認 Agents ✅ 16個、Commands ✅ 39個、Skills ✅ 56個 全部到位
-- **✅ 防失憶機制全面升級 — 已驗證生效**：
-  - 6 個 hooks 安裝在 `.claude/settings.json`
-  - SessionStart ✅ suggest-compact ✅ 已驗證
-- **Singer Agent v0.3 完整升級**（117 個測試通過）
+  - `.env`：`CLAUDE_MAX_TURNS=50`、`CLAUDE_TIMEOUT_SECONDS=900`
+  - `sdk_integration.py`：空回應合成摘要
+- **✅ Git 初始提交 + Push** 到 `bigmale0811/agent-army`
+
+## ❌ ECC 流程違規（教訓）
+- 開發 LLM 模組和 Setup Wizard 時跳過了：
+  - Phase 1 (PLAN) — 沒有等使用者確認就動手
+  - Phase 2 (TDD) — 先寫程式後補測試
+  - Phase 3 (REVIEW) — 沒有跑 code-reviewer
+  - Phase 4 (VERIFY) — 沒有跑完整驗證
+- 結果：5 個 bug 到了使用者手上才被發現
+- **決策**：已記錄到 decisions.md，未來必須嚴格遵守
 
 ## 重要決策
-- ECC 標準流程：Research → Plan → TDD → Review → Verify → Commit → Document → Memory
-- 每個開發項目必須先告知使用者將使用哪些 ECC 模組
-- Hooks 必須放在 `.claude/settings.json`（project-level）
-- Rules 安裝在 `.claude/rules/`（common + python）
-- 通知問題修復：max_turns 50 + timeout 900s + 空回應合成摘要
+- ECC 標準流程必須嚴格遵守，不可因為「快」而跳過
+- Ollama 是可選的，不是必要的
+- 雲端 LLM 用 `openai` SDK 統一介面（base_url 切換）
+- Gemini 用 `google-genai` SDK
 
 ## 下一步
-1. **重啟 Telegram Bot** 使修改生效
-2. 用現有素材跑 v0.3 完整端對端測試
-3. 透過 Singer Bot 傳送結果給使用者
+1. 跑完整測試確認 46 個測試全部通過
+2. 確認 `claude-code-telegram` 是否需要 push 到 GitHub
+3. Singer Agent v0.3 端對端測試（仍待執行）
 4. v0.3.1：服裝修改功能
 
 ## 專案現有素材
@@ -40,8 +48,4 @@
 ## 使用者操作環境
 - 透過 `D:\Projects\claude-code-telegram` 的 Telegram Bot 互動
 - Bot 用 `claude-agent-sdk`，`cwd=D:\Projects\agent-army`
-- `setting_sources=["project"]`，只讀 project-level 設定
-
-## ⚡ 最近壓縮事件
-- [2026-03-05 09:36:39] Context 被自動壓縮，以上內容是壓縮前的狀態
-- **請重新讀取此檔案確認進度**
+- Git repo：`https://github.com/bigmale0811/agent-army.git`
