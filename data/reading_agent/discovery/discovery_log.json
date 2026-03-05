@@ -1,0 +1,14 @@
+[
+  {
+    "timestamp": "2026-03-04T12:00:54.957387",
+    "trigger": "manual",
+    "candidates_found": 10,
+    "duration_seconds": 506.26
+  },
+  {
+    "timestamp": "2026-03-04T12:00:54.968128",
+    "trigger": "scheduled",
+    "candidates_found": 10,
+    "duration_seconds": 0
+  }
+]

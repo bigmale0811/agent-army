@@ -1,0 +1,46 @@
+{
+  "project_id": "20260304_165859_愛我的人和我愛的人",
+  "source_audio": "D:\\Projects\\agent-army\\data\\singer_agent\\inbox\\愛我的人和我愛的人_ζั͡ޓ擂戰އ沒人_2026_02_03_15_06_32.mp3",
+  "status": "completed",
+  "metadata": {
+    "title": "愛我的人和我愛的人",
+    "artist": "游鴻明",
+    "language": "",
+    "genre_hint": "",
+    "mood_hint": "情緒低落無奈",
+    "lyrics_file": "",
+    "notes": ""
+  },
+  "song_spec": {
+    "title": "愛我的人和我愛的人",
+    "artist": "游鴻明",
+    "language": "",
+    "research_summary": "游鴻明的這首歌以抒情慢板的形式表達了失戀後的無奈與哀傷，帶有淡淡的憂鬱和深深的思考。",
+    "genre": "ballad",
+    "mood": "sad",
+    "visual_style": "monochrome and muted tones, with elements of melancholy and introspection",
+    "color_palette": "grey, blue, black, beige, brown",
+    "background_prompt": "A dimly lit room with a large window overlooking an empty street at dusk, rain lightly falling outside. The inside is sparsely decorated with few personal items.",
+    "outfit_prompt": "An anime character wearing simple and dark clothing, such as a loose black t-shirt and jeans, possibly with a faded grey jacket or hoodie over it",
+    "scene_description": "MV中的場景應該是一個昏暗的房間，內有大窗戶對外望著空無一人的街道，在雨天時光線微弱。室內裝飾簡樸，僅有少量物品能透露主人心情，如未讀完的書籍和散落的照片。角色則穿著簡單又帶點淒涼氣息的衣服，呈現出一種低調哀愁的形象。",
+    "created_at": "2026-03-04T16:59:07.165168"
+  },
+  "final_video": "D:\\Projects\\agent-army\\data\\singer_agent\\videos\\20260304_165859_愛我的人和我愛的人.mp4",
+  "youtube_title": "🔥動漫虛擬歌手深情翻唱《愛我的人和我愛的人》情歌悲傷版🔥",
+  "youtube_description": "動漫虛擬角色獻唱游鴻明的經典歌曲《愛我的人和我愛的人》，以獨特的視覺風格演繹這首感人至深的情歌。#游鴻明 #翻唱 #情歌悲傷版",
+  "youtube_tags": [
+    "動漫虛擬歌手",
+    "游鴻明",
+    "愛我的人和我愛的人",
+    "情歌",
+    "悲傷版",
+    "cover",
+    "原創音樂視頻",
+    "虛擬角色唱歌",
+    "動畫MV",
+    "深情"
+  ],
+  "created_at": "2026-03-04T16:58:59.710812",
+  "completed_at": "2026-03-04T16:59:10.525641",
+  "error_message": ""
+}

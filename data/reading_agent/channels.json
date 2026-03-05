@@ -1,0 +1,23 @@
+[
+  {
+    "channel_id": "UCPgGtH2PxZ9xR0ehzQ27FHw",
+    "name": "文森說書",
+    "url": "https://www.youtube.com/@vincentshuoshu",
+    "category": "general",
+    "description": "每週介紹一本好書，涵蓋商業、心理、科學等領域"
+  },
+  {
+    "channel_id": "UCMUnInmOkrWN4gof9KlhNmQ",
+    "name": "老高與小茉",
+    "url": "https://www.youtube.com/@laogao",
+    "category": "general",
+    "description": "知識型頻道，涵蓋科學、歷史、哲學等各類主題"
+  },
+  {
+    "channel_id": "UCBvQ4hOEoDdYeIBu0tE-7Sg",
+    "name": "閱部客",
+    "url": "https://www.youtube.com/@yuehbuker",
+    "category": "business",
+    "description": "商業、管理、創業類書籍重點摘要"
+  }
+]

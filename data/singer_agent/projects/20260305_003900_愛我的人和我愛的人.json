@@ -1,0 +1,52 @@
+{
+  "project_id": "20260305_003900_愛我的人和我愛的人",
+  "source_audio": "data/singer_agent/inbox/愛我的人和我愛的人_ζั͡ޓ擂戰އ沒人_2026_02_03_15_06_32.mp3",
+  "status": "completed",
+  "metadata": {
+    "title": "愛我的人和我愛的人",
+    "artist": "游鴻明",
+    "language": "",
+    "genre_hint": "",
+    "mood_hint": "sad",
+    "lyrics_file": "",
+    "notes": ""
+  },
+  "song_spec": {
+    "title": "愛我的人和我愛的人",
+    "artist": "游鴻明",
+    "language": "",
+    "research_summary": "歌曲《愛我的人和我愛的人》由游鴻明演唱，其風格傾向於抒情流行。這首歌表達了對愛情的複雜情感以及失去所愛之人的悲傷。",
+    "genre": "ballad",
+    "mood": "sad",
+    "visual_style": "minimalist and melancholic",
+    "color_palette": [
+      "dark blue",
+      "gray",
+      "black",
+      "silver"
+    ],
+    "background_prompt": "A dimly lit room with soft shadows, rain dripping outside the window, distant city lights reflecting off wet streets.",
+    "outfit_prompt": "The character wears a simple black t-shirt and dark jeans, standing quietly by an old wooden desk filled with books and a single burning candle",
+    "scene_description": "MV場景設定在一個昏暗但不完全黑暗的房間內，窗外下著小雨，遠處的城市燈光透過霧氣微微閃爍。主角穿著單純的黑色T恤和深色牛仔褲，靜默地站在舊木桌旁，桌上散落著書本與一支燃燒的蠟燭，營造出一種淡淡的哀愁氛圍。",
+    "created_at": "2026-03-05T00:40:07.069151"
+  },
+  "final_video": "D:\\Projects\\agent-army\\data\\singer_agent\\videos\\20260305_003900_愛我的人和我愛的人.mp4",
+  "render_mode": "ffmpeg_static",
+  "youtube_title": "😢雨夜中的思念《愛我的人和我愛的人》MV",
+  "youtube_description": "這是一首感人的翻唱，原曲由游鴻明創作。虛擬歌手帶來的憂鬱情歌，在昏暗的房間、綿密的小雨中散發淡淡哀愁。#愛我的人 #虛擬歌手 #悲傷情歌",
+  "youtube_tags": [
+    "愛我的人",
+    "游鴻明",
+    "虛擬歌手",
+    "悲傷情歌",
+    "翻唱",
+    "COVER",
+    "BALLAD",
+    "憂鬱情歌",
+    "下雨天情歌",
+    "夜間情歌"
+  ],
+  "created_at": "2026-03-05T00:39:00.077481",
+  "completed_at": "2026-03-05T00:42:07.128970",
+  "error_message": ""
+}

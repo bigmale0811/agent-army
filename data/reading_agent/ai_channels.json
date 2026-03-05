@@ -1,0 +1,50 @@
+[
+  {
+    "channel_id": "UCYO_jab_esuFRV4b17AJtAw",
+    "name": "Two Minute Papers",
+    "url": "https://www.youtube.com/@TwoMinutePapers",
+    "category": "ai_research",
+    "language": "en",
+    "description": "AI 研究論文解讀，每週更新最新 AI 突破"
+  },
+  {
+    "channel_id": "UCNJ1Ymd5yFuUPtn21xtRbbw",
+    "name": "AI Explained",
+    "url": "https://www.youtube.com/@aiexplained-official",
+    "category": "ai_news",
+    "language": "en",
+    "description": "深度解析 AI 產業新聞與技術趨勢"
+  },
+  {
+    "channel_id": "UCsBjURrPoezykLs9EqgamOA",
+    "name": "Fireship",
+    "url": "https://www.youtube.com/@Fireship",
+    "category": "ai_tech",
+    "language": "en",
+    "description": "科技與 AI 快報，100 秒解釋技術概念"
+  },
+  {
+    "channel_id": "UCJHnlUQJKTcTaEJmzNEOh0g",
+    "name": "TheAIGRID",
+    "url": "https://www.youtube.com/@TheAiGrid",
+    "category": "ai_news",
+    "language": "en",
+    "description": "AI 產業動態、新工具、新模型發佈追蹤"
+  },
+  {
+    "channel_id": "UCbfYPyITQ-7l4upoX8nvctg",
+    "name": "Two Minute Papers (中文)",
+    "url": "https://www.youtube.com/@two-minute-papers-chinese",
+    "category": "ai_research",
+    "language": "zh",
+    "description": "Two Minute Papers 中文版，AI 論文解讀"
+  },
+  {
+    "channel_id": "UCJMnKlBEUqBPMxnuE1Uw1HQ",
+    "name": "Matt Wolfe",
+    "url": "https://www.youtube.com/@maboroshi",
+    "category": "ai_tools",
+    "language": "en",
+    "description": "AI 工具評測、每週 AI 新聞彙整"
+  }
+]

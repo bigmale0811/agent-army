@@ -1,0 +1,52 @@
+{
+  "project_id": "20260305_024425_愛我的人和我愛的人",
+  "source_audio": "data/singer_agent/inbox/愛我的人和我愛的人_ζั͡ޓ擂戰އ沒人_2026_02_03_15_06_32.mp3",
+  "status": "completed",
+  "metadata": {
+    "title": "愛我的人和我愛的人",
+    "artist": "游鴻明",
+    "language": "",
+    "genre_hint": "",
+    "mood_hint": "",
+    "lyrics_file": "",
+    "notes": ""
+  },
+  "song_spec": {
+    "title": "愛我的人和我愛的人",
+    "artist": "游鴻明",
+    "language": "",
+    "research_summary": "這首歌表達了一種深情的愛情故事，通過平實而真摯的語言傳遞著歌手對愛情的理解和感慨。",
+    "genre": "ballad",
+    "mood": "romantic",
+    "visual_style": "Realistic, Soft Lighting, Romantic Scenes",
+    "color_palette": "Soft Pink, Light Blue, Cream White, Pale Yellow, Muted Green",
+    "background_prompt": "A quiet park at dusk with a small pond reflecting the setting sun and distant trees, soft golden light from street lamps casting long shadows in an old-fashioned neighborhood.",
+    "outfit_prompt": "Casual yet elegant attire: A simple white shirt with loose sleeves, slightly oversized for comfort, paired with dark wash jeans and comfortable shoes. The character carries a single red rose in one hand.",
+    "scene_description": "MV中，男主角身著簡約而舒適的服裝在傍晚時分漫步於一個安靜的小公園內。周圍散發出柔和的黃金色光線，映襯著遠處樹木和小池塘中反光的夕陽景象。場景充滿詩意與浪漫氛圍，同時帶有一絲淡淡的哀愁，反映了歌曲中的情感深度。",
+    "created_at": "2026-03-05T02:44:33.585285"
+  },
+  "final_video": "D:\\Projects\\agent-army\\data\\singer_agent\\videos\\20260305_024425_愛我的人和我愛的人.mp4",
+  "render_mode": "ffmpeg_static",
+  "background_image": "D:\\Projects\\agent-army\\data\\singer_agent\\backgrounds\\bg_20260305_024425_愛我的人和我愛的人.png",
+  "character_nobg": "D:\\Projects\\agent-army\\data\\singer_agent\\composites\\nobg_20260305_024425_愛我的人和我愛的人.png",
+  "composite_image": "D:\\Projects\\agent-army\\data\\singer_agent\\composites\\composite_20260305_024425_愛我的人和我愛的人.png",
+  "precheck_passed": true,
+  "precheck_summary": "預檢結果：✅ 通過\n  警告（1 項）：\n    ⚠️ Gemini 審查: 背景公園的傍晚景色與意境非常符合歌曲風格，光線和池塘倒影營造出詩意與浪漫。但前景的Q版卡通人物風格過於活潑可愛，且手持麥克風，與歌曲的抒情、情感深度以及男主角漫步公園的預期場景嚴重不符，會大大削弱MV的感染力。\n  🤖 Gemini 評分：4/10\n  💬 背景公園的傍晚景色與意境非常符合歌曲風格，光線和池塘倒影營造出詩意與浪漫。但前景的Q版卡通人物風格過於活潑可愛，且手持麥克風，與歌曲的抒情、情感深度以及男主角漫步公園的預期場景嚴重不符，會大大削弱MV的感染力。",
+  "youtube_title": "💖動漫風.Virtual Singer翻唱游鴻明《愛我的人和我愛的人》",
+  "youtube_description": "享受動漫風格Virtual Singer的浪漫Ballad，《愛我的人和我愛的人》，原唱：游鴻明。漫步公園，黃金夕陽下綻放哀愁與溫柔。",
+  "youtube_tags": [
+    "愛我的人和我愛的人",
+    "游鴻明",
+    "Virtual Singer",
+    "動漫風格",
+    "Ballad",
+    "浪漫",
+    "翻唱",
+    "cover",
+    "傍晚",
+    "公園"
+  ],
+  "created_at": "2026-03-05T02:44:25.820075",
+  "completed_at": "2026-03-05T02:55:56.082786",
+  "error_message": ""
+}

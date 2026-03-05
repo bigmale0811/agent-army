@@ -1,0 +1,57 @@
+{
+  "project_id": "20260305_104632_愛我的人和我愛的人",
+  "source_audio": "data/singer_agent/inbox/愛我的人和我愛的人_ζั͡ޓ擂戰އ沒人_2026_02_03_15_06_32.mp3",
+  "status": "completed",
+  "metadata": {
+    "title": "愛我的人和我愛的人",
+    "artist": "裘海正",
+    "language": "",
+    "genre_hint": "",
+    "mood_hint": "",
+    "lyrics_file": "",
+    "notes": ""
+  },
+  "song_spec": {
+    "title": "愛我的人和我愛的人",
+    "artist": "裘海正",
+    "language": "",
+    "research_summary": "這首歌的風格偏向抒情歌曲，具有濃厚的情感和內省的氛圍，以柔和的旋律描繪愛情中的思念與不舍。",
+    "genre": "ballad",
+    "mood": "romantic, nostalgic",
+    "visual_style": "Pastel Watercolor",
+    "color_palette": [
+      "soft_pink",
+      "light_blue",
+      "pastel_green",
+      "cream"
+    ],
+    "background_prompt": "A gentle sunset over a calm lake, with soft reflections on the water and distant mountains in the background.",
+    "outfit_prompt": "A character wearing a simple but elegant dress or suit that exudes grace and poise, suitable for a romantic yet bittersweet scene.",
+    "scene_description": "MV的場景可以設置在一個風景如畫的湖畔，夕陽西下時分。背景中有淡淡的山影和水面上柔和的光影變化，營造出一種寧靜而略帶感傷的氣氛。歌手在這樣的環境中表達對愛情的思念與深情。",
+    "created_at": "2026-03-05T10:46:51.135774"
+  },
+  "final_video": "D:\\Projects\\agent-army\\data\\singer_agent\\videos\\20260305_104632_愛我的人和我愛的人.mp4",
+  "render_mode": "ffmpeg_static",
+  "background_image": "D:\\Projects\\agent-army\\data\\singer_agent\\backgrounds\\bg_20260305_104632_愛我的人和我愛的人.png",
+  "character_nobg": "D:\\Projects\\agent-army\\data\\singer_agent\\composites\\nobg_20260305_104632_愛我的人和我愛的人.png",
+  "composite_image": "D:\\Projects\\agent-army\\data\\singer_agent\\composites\\composite_20260305_104632_愛我的人和我愛的人.png",
+  "precheck_passed": true,
+  "precheck_summary": "預檢結果：✅ 通過\n  警告（1 項）：\n    ⚠️ Gemini 審查: 背景湖畔夕陽風景優美，符合歌曲的浪漫懷舊氛圍。然而，前景的卡通化3D歌手造型與歌曲的抒情、感傷風格嚴重不符，視覺風格衝突感強烈，削弱了歌曲情感的深度。\n  🤖 Gemini 評分：3/10\n  💬 背景湖畔夕陽風景優美，符合歌曲的浪漫懷舊氛圍。然而，前景的卡通化3D歌手造型與歌曲的抒情、感傷風格嚴重不符，視覺風格衝突感強烈，削弱了歌曲情感的深度。",
+  "youtube_title": "VIRTUAL LOVE SONG✨[愛我的人和我愛的人] 宁静湖畔的温柔告白",
+  "youtube_description": "虛擬歌手獻唱裘海正的經典情歌《愛我的人和我愛的人》，在美麗的風景中訴說愛情的故事。#虚拟歌手 #翻唱 #情歌 #浪漫",
+  "youtube_tags": [
+    "愛我的人和我愛的人",
+    "virtual singer",
+    "裘海正",
+    "cover",
+    "ballad",
+    "情歌",
+    "浪漫",
+    "懷舊",
+    "虛擬角色唱歌",
+    "湖畔"
+  ],
+  "created_at": "2026-03-05T10:46:32.906835",
+  "completed_at": "2026-03-05T10:58:16.951702",
+  "error_message": ""
+}

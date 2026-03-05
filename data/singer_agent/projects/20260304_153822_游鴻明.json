@@ -1,0 +1,22 @@
+{
+  "project_id": "20260304_153822_游鴻明",
+  "source_audio": "D:\\Projects\\agent-army\\data\\singer_agent\\inbox\\愛我的人和我愛的人_ζั͡ޓ擂戰އ沒人_2026_02_03_15_06_32.mp3",
+  "status": "failed",
+  "metadata": {
+    "title": "游鴻明",
+    "artist": "愛我的人和我愛的人",
+    "language": "",
+    "genre_hint": "",
+    "mood_hint": "情緒低落",
+    "lyrics_file": "",
+    "notes": ""
+  },
+  "song_spec": null,
+  "final_video": "",
+  "youtube_title": "",
+  "youtube_description": "",
+  "youtube_tags": [],
+  "created_at": "2026-03-04T15:38:22.821623",
+  "completed_at": "",
+  "error_message": "Client error '404 Not Found' for url 'http://localhost:11434/api/generate'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404"
+}

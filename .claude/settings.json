@@ -1,0 +1,74 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"D:/Projects/agent-army/scripts/hooks/suggest-compact.js\""
+          }
+        ],
+        "description": "在邏輯斷點提醒手動 /compact（40 次工具呼叫後）"
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const i=JSON.parse(d);const cmd=i.tool_input?.command||'';if(/git push/.test(cmd)){console.error('[Hook] ⚠️ git push 前請確認已更新 active_context.md')}}catch{}console.log(d)})\""
+          }
+        ],
+        "description": "git push 前提醒更新記憶"
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"D:/Projects/agent-army/scripts/hooks/pre-compact.js\""
+          }
+        ],
+        "description": "壓縮前自動保存狀態到 active_context.md"
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"D:/Projects/agent-army/scripts/hooks/session-start.js\""
+          }
+        ],
+        "description": "新對話自動載入 active_context.md"
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"D:/Projects/agent-army/scripts/hooks/session-end.js\""
+          }
+        ],
+        "description": "對話結束自動歸檔 session"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const i=JSON.parse(d);const cmd=i.tool_input?.command||'';if(/gh pr create/.test(cmd)){const out=i.tool_output?.output||'';const m=out.match(/https:\\/\\/github.com\\/[^/]+\\/[^/]+\\/pull\\/\\d+/);if(m){console.error('[Hook] PR created: '+m[0])}}}catch{}console.log(d)})\""
+          }
+        ],
+        "description": "PR 建立後自動顯示 URL"
+      }
+    ]
+  }
+}

@@ -1,0 +1,35 @@
+# 雲端 LLM Provider 設定
+# API key 從環境變數讀取，不要直接寫在這裡
+
+providers:
+  openai:
+    api_key_env: OPENAI_API_KEY
+    base_url: https://api.openai.com/v1
+    default_model: gpt-4o-mini
+    description: "OpenAI GPT 系列"
+
+  deepseek:
+    api_key_env: DEEPSEEK_API_KEY
+    base_url: https://api.deepseek.com
+    default_model: deepseek-chat
+    description: "DeepSeek（高性價比程式碼模型）"
+
+  groq:
+    api_key_env: GROQ_API_KEY
+    base_url: https://api.groq.com/openai/v1
+    default_model: llama-3.3-70b-versatile
+    description: "Groq（超低延遲推理）"
+
+  together:
+    api_key_env: TOGETHER_API_KEY
+    base_url: https://api.together.xyz/v1
+    default_model: meta-llama/Llama-3.3-70B-Instruct-Turbo
+    description: "Together AI（多模型平台）"
+
+  gemini:
+    api_key_env: GOOGLE_API_KEY
+    default_model: gemini-2.0-flash
+    description: "Google Gemini（多模態模型）"
+
+# 預設 Provider（可被 .env 中的 DEFAULT_LLM_PROVIDER 覆蓋）
+default_provider: openai

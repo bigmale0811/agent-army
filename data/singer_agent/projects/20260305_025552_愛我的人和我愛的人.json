@@ -1,0 +1,52 @@
+{
+  "project_id": "20260305_025552_愛我的人和我愛的人",
+  "source_audio": "data/singer_agent/inbox/愛我的人和我愛的人_ζั͡ޓ擂戰އ沒人_2026_02_03_15_06_32.mp3",
+  "status": "completed",
+  "metadata": {
+    "title": "愛我的人和我愛的人",
+    "artist": "游鴻明",
+    "language": "",
+    "genre_hint": "",
+    "mood_hint": "",
+    "lyrics_file": "",
+    "notes": ""
+  },
+  "song_spec": {
+    "title": "愛我的人和我愛的人",
+    "artist": "游鴻明",
+    "language": "",
+    "research_summary": "這首歌是一首抒情歌曲，通過細膩的旋律和溫柔的聲音表達了對愛人的情感。",
+    "genre": "ballad",
+    "mood": "romantic",
+    "visual_style": "watercolor, soft lighting, nostalgic",
+    "color_palette": "pastel pink, light blue, beige, pale yellow",
+    "background_prompt": "a quiet park at dusk with a small lake and autumn leaves gently falling on the ground",
+    "outfit_prompt": "A character wearing a simple yet elegant outfit with pastel colors, such as a light pink blouse and beige skirt, with slightly messy hair to show a natural and relaxed look.",
+    "scene_description": "MV場景設置在一個寧靜的公園內，時間為黃昏時分。背景中有著一處小小的湖泊，湖面泛著夕陽金色的光芒，周圍散落著剛剛掉落不久的秋葉。主角獨自一人走在小徑上，表情溫柔而略帶憂鬱，彷彿正在回憶與愛人共度的美好時光。",
+    "created_at": "2026-03-05T02:56:01.661129"
+  },
+  "final_video": "D:\\Projects\\agent-army\\data\\singer_agent\\videos\\20260305_025552_愛我的人和我愛的人.mp4",
+  "render_mode": "ffmpeg_static",
+  "background_image": "D:\\Projects\\agent-army\\data\\singer_agent\\backgrounds\\bg_20260305_025552_愛我的人和我愛的人.png",
+  "character_nobg": "D:\\Projects\\agent-army\\data\\singer_agent\\composites\\nobg_20260305_025552_愛我的人和我愛的人.png",
+  "composite_image": "D:\\Projects\\agent-army\\data\\singer_agent\\composites\\composite_20260305_025552_愛我的人和我愛的人.png",
+  "precheck_passed": true,
+  "precheck_summary": "預檢結果：✅ 通過\n  警告（1 項）：\n    ⚠️ Gemini 審查: 背景畫面與歌曲意境、黃昏公園場景和秋葉描述非常吻合，水彩風格優雅。但Q版卡通人物手持麥克風的風格與游鴻明情歌的嚴肅浪漫氛圍嚴重不符，角色表情也缺乏預期的憂鬱感，整體合成圖片的風格不協調，不適合用於此MV。\n  🤖 Gemini 評分：3/10\n  💬 背景畫面與歌曲意境、黃昏公園場景和秋葉描述非常吻合，水彩風格優雅。但Q版卡通人物手持麥克風的風格與游鴻明情歌的嚴肅浪漫氛圍嚴重不符，角色表情也缺乏預期的憂鬱感，整體合成圖片的風格不協調，不適合用於此MV。",
+  "youtube_title": "✨秋日情歌《愛我的人和我愛的人》虛擬歌手翻唱✨",
+  "youtube_description": "秋風輕拂，情感綿長。虛擬歌手帶來遊鴻明的經典 ballad 曲目《愛我的人和我愛的人》，獻給所有熱戀中的你和我。",
+  "youtube_tags": [
+    "愛我的人和我愛的人",
+    "游鴻明",
+    "ballad情歌",
+    "虛擬歌手翻唱",
+    "浪漫音樂",
+    "秋日情懷",
+    "寧靜公園",
+    "夕陽美景",
+    "愛情回憶",
+    "情感告白"
+  ],
+  "created_at": "2026-03-05T02:55:52.497584",
+  "completed_at": "2026-03-05T03:07:22.500551",
+  "error_message": ""
+}
