@@ -134,23 +134,45 @@ def print_info(msg: str) -> None:
     print(f"  {CYAN}ℹ️  {msg}{RESET}")
 
 
+def _is_existing_project(path: Path) -> bool:
+    """判斷是否為已存在的 agent-army 專案（例如 git clone 下來的）。"""
+    return (path / "CLAUDE.md").exists() and (path / ".claude" / "settings.json").exists()
+
+
 def run_wizard(project_path: Optional[Path] = None) -> None:
     """執行安裝精靈主流程。"""
     _enable_ansi_windows()
     print_banner()
 
-    total_steps = 7
+    # 自動偵測：如果是在 clone 下來的專案裡執行，就用當前目錄
+    cwd = Path.cwd()
+    is_existing = _is_existing_project(project_path or cwd)
+
+    if is_existing and project_path is None:
+        project_path = cwd
+
     context: Dict = {
         "project_path": project_path,
-        "project_name": None,
+        "project_name": project_path.name if project_path else None,
         "language": None,
         "cloud_providers": [],
         "setup_ollama": False,
         "setup_telegram": False,
+        "is_existing_project": is_existing,
     }
 
-    # Step 1: 環境檢查
-    print_step(1, total_steps, "環境檢查")
+    if is_existing:
+        total_steps = 5
+        print_ok(f"偵測到既有專案：{project_path}")
+        print_info("跳過專案初始化，只進行環境設定\n")
+    else:
+        total_steps = 7
+
+    step = 0
+
+    # Step: 環境檢查
+    step += 1
+    print_step(step, total_steps, "環境檢查")
     env_ok = run_environment_checks()
     if not env_ok:
         print_fail("環境檢查未通過，請先安裝缺少的工具")
@@ -158,37 +180,44 @@ def run_wizard(project_path: Optional[Path] = None) -> None:
             print("\n  👋 安裝中止。請安裝缺少的工具後重新執行。\n")
             sys.exit(1)
 
-    # Step 2: Claude 登入確認
-    print_step(2, total_steps, "Claude CLI 登入")
+    # Step: Claude 登入確認
+    step += 1
+    print_step(step, total_steps, "Claude CLI 登入")
     _check_claude_auth()
 
-    # Step 3: 專案初始化
-    print_step(3, total_steps, "專案初始化")
-    context = scaffold_project(context)
+    # Step: 專案初始化（只有新專案才需要）
+    if not is_existing:
+        step += 1
+        print_step(step, total_steps, "專案初始化")
+        context = scaffold_project(context)
 
-    # Step 4: 雲端模型設定
-    print_step(4, total_steps, "雲端模型設定（可選）")
+    # Step: 雲端模型設定
+    step += 1
+    print_step(step, total_steps, "雲端模型設定（可選）")
     if ask_yes_no("要設定雲端模型 API 嗎？"):
         context = setup_cloud_models(context)
     else:
         print_info("略過。之後可執行 python setup.py --add-cloud-models")
 
-    # Step 5: 本地模型設定
-    print_step(5, total_steps, "本地模型 Ollama 設定（可選）")
+    # Step: 本地模型設定
+    step += 1
+    print_step(step, total_steps, "本地模型 Ollama 設定（可選）")
     if ask_yes_no("要設定本地 Ollama 嗎？", default=False):
         context = setup_ollama(context)
     else:
         print_info("略過。之後可執行 python setup.py --add-ollama")
 
-    # Step 6: Telegram Bot 設定
-    print_step(6, total_steps, "Telegram Bot 設定（可選）")
+    # Step: Telegram Bot 設定
+    step += 1
+    print_step(step, total_steps, "Telegram Bot 設定（可選）")
     if ask_yes_no("要設定 Telegram Bot 嗎？"):
         context = setup_telegram(context)
     else:
         print_info("略過。之後可執行 python setup.py --add-telegram")
 
-    # Step 7: 驗證
-    print_step(7, total_steps, "驗證安裝結果")
+    # Step: 驗證
+    step += 1
+    print_step(step, total_steps, "驗證安裝結果")
     run_verification(context)
 
     # 完成
