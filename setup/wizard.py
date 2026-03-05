@@ -10,6 +10,7 @@ from typing import Dict, List, Optional
 
 from .checks import run_environment_checks
 from .cloud_models import setup_cloud_models
+from .github_cli import setup_github_cli
 from .ollama import setup_ollama
 from .scaffold import scaffold_project
 from .telegram import setup_telegram
@@ -162,11 +163,11 @@ def run_wizard(project_path: Optional[Path] = None) -> None:
     }
 
     if is_existing:
-        total_steps = 5
+        total_steps = 6
         print_ok(f"偵測到既有專案：{project_path}")
         print_info("跳過專案初始化，只進行環境設定\n")
     else:
-        total_steps = 7
+        total_steps = 8
 
     step = 0
 
@@ -190,6 +191,14 @@ def run_wizard(project_path: Optional[Path] = None) -> None:
         step += 1
         print_step(step, total_steps, "專案初始化")
         context = scaffold_project(context)
+
+    # Step: GitHub CLI 設定
+    step += 1
+    print_step(step, total_steps, "GitHub CLI 設定（可選）")
+    if ask_yes_no("要設定 GitHub CLI 嗎？（用於自動化 push / PR / repo 建立）"):
+        context = setup_github_cli(context)
+    else:
+        print_info("略過。之後可執行 python setup.py --add-github")
 
     # Step: 雲端模型設定
     step += 1

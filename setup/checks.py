@@ -87,6 +87,15 @@ def run_environment_checks() -> bool:
             else:
                 print_fail("Claude CLI 安裝失敗，請手動執行：npm install -g @anthropic-ai/claude-code")
 
+    # GitHub CLI（可選）
+    installed, version = _check_command("gh", ["--version"])
+    if installed:
+        # 只取第一行版本號
+        first_line = version.split("\n")[0] if version else version
+        print_ok(f"GitHub CLI: {first_line}")
+    else:
+        print_info("GitHub CLI (gh) — 未安裝（可選，用於自動化 push/PR）")
+
     # Ollama（可選）
     installed, version = _check_command("ollama", ["--version"])
     if installed:

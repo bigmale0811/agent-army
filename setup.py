@@ -2,8 +2,9 @@
 """Agent Army Setup Wizard — 互動式安裝精靈入口。
 
 使用方式：
-    python setup.py                  # 完整安裝精靈
+    python setup.py                     # 完整安裝精靈
     python setup.py --add-cloud-models  # 只設定雲端模型
+    python setup.py --add-github        # 只設定 GitHub CLI
     python setup.py --add-ollama        # 只設定 Ollama
     python setup.py --add-telegram      # 只設定 Telegram Bot
     python setup.py --verify            # 只驗證安裝結果
@@ -37,6 +38,11 @@ def main() -> None:
         help="只設定本地 Ollama",
     )
     parser.add_argument(
+        "--add-github",
+        action="store_true",
+        help="只設定 GitHub CLI",
+    )
+    parser.add_argument(
         "--add-telegram",
         action="store_true",
         help="只設定 Telegram Bot",
@@ -68,6 +74,16 @@ def main() -> None:
         print_banner()
         context = {"project_path": args.path or Path.cwd()}
         setup_ollama(context)
+        return
+
+    if args.add_github:
+        from setup.github_cli import setup_github_cli
+        from setup.wizard import _enable_ansi_windows, print_banner
+
+        _enable_ansi_windows()
+        print_banner()
+        context = {"project_path": args.path or Path.cwd()}
+        setup_github_cli(context)
         return
 
     if args.add_telegram:
