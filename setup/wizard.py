@@ -1,7 +1,18 @@
 """Setup Wizard 主流程控制。
 
 協調所有安裝步驟，提供統一的互動介面。
+從零開始在全新電腦建立完整 Agent Army 環境。
 只使用 Python 標準庫。
+
+流程：
+  Step 1: 環境檢查
+  Step 2: GitHub CLI 設定
+  Step 3: 下載 agent-army
+  Step 4: 專案初始化
+  Step 5: 雲端模型設定
+  Step 6: 本地模型 Ollama
+  Step 7: Telegram Bot 設定
+  Step 8: 驗證
 """
 
 import sys
@@ -10,9 +21,9 @@ from typing import Dict, List, Optional
 
 from .checks import run_environment_checks
 from .cloud_models import setup_cloud_models
+from .download import setup_download
 from .github_cli import setup_github_cli
 from .ollama import setup_ollama
-from .scaffold import scaffold_project
 from .telegram import setup_telegram
 from .verify import run_verification
 
@@ -24,6 +35,8 @@ BLUE = "\033[94m"
 CYAN = "\033[96m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
+
+TOTAL_STEPS = 8
 
 
 def _enable_ansi_windows() -> None:
@@ -42,7 +55,7 @@ def print_banner() -> None:
     """顯示歡迎橫幅。"""
     print(f"""
 {CYAN}{BOLD}╔══════════════════════════════════════════╗
-║   🤖 Agent Army Setup Wizard v1.0       ║
+║   🤖 Agent Army Setup Wizard v2.0       ║
 ║   Universal Agent Framework Installer    ║
 ╚══════════════════════════════════════════╝{RESET}
 """)
@@ -141,119 +154,156 @@ def _is_existing_project(path: Path) -> bool:
 
 
 def run_wizard(project_path: Optional[Path] = None) -> None:
-    """執行安裝精靈主流程。"""
+    """執行安裝精靈主流程（8 步）。
+
+    Step 1: 環境檢查
+    Step 2: GitHub CLI 設定
+    Step 3: 下載 agent-army
+    Step 4: 專案初始化
+    Step 5: 雲端模型設定
+    Step 6: 本地模型 Ollama
+    Step 7: Telegram Bot 設定
+    Step 8: 驗證
+    """
     _enable_ansi_windows()
     print_banner()
 
-    # 自動偵測：如果是在 clone 下來的專案裡執行，就用當前目錄
-    cwd = Path.cwd()
-    is_existing = _is_existing_project(project_path or cwd)
-
-    if is_existing and project_path is None:
-        project_path = cwd
-
     context: Dict = {
         "project_path": project_path,
-        "project_name": project_path.name if project_path else None,
-        "language": None,
+        "project_name": None,
         "cloud_providers": [],
         "setup_ollama": False,
         "setup_telegram": False,
-        "is_existing_project": is_existing,
+        "setup_github": False,
+        "has_ollama": False,
     }
 
-    if is_existing:
-        total_steps = 6
-        print_ok(f"偵測到既有專案：{project_path}")
-        print_info("跳過專案初始化，只進行環境設定\n")
-    else:
-        total_steps = 8
+    # ── Step 1: 環境檢查 ──
+    print_step(1, TOTAL_STEPS, "環境檢查")
+    env_result = run_environment_checks()
+    # 記錄 Ollama 有無（Step 6 會用到）
+    context["has_ollama"] = env_result.get("has_ollama", False)
 
-    step = 0
-
-    # Step: 環境檢查
-    step += 1
-    print_step(step, total_steps, "環境檢查")
-    env_ok = run_environment_checks()
-    if not env_ok:
+    if not env_result.get("all_ok", True):
         print_fail("環境檢查未通過，請先安裝缺少的工具")
         if not ask_yes_no("是否繼續？", default=False):
             print("\n  👋 安裝中止。請安裝缺少的工具後重新執行。\n")
             sys.exit(1)
 
-    # Step: Claude 登入確認
-    step += 1
-    print_step(step, total_steps, "Claude CLI 登入")
-    _check_claude_auth()
+    # ── Step 2: GitHub CLI 設定 ──
+    print_step(2, TOTAL_STEPS, "GitHub CLI 設定")
+    context = setup_github_cli(context)
 
-    # Step: 專案初始化（只有新專案才需要）
-    if not is_existing:
-        step += 1
-        print_step(step, total_steps, "專案初始化")
-        context = scaffold_project(context)
+    # ── Step 3: 下載 agent-army ──
+    print_step(3, TOTAL_STEPS, "下載 agent-army")
+    context = setup_download(context)
 
-    # Step: GitHub CLI 設定
-    step += 1
-    print_step(step, total_steps, "GitHub CLI 設定（可選）")
-    if ask_yes_no("要設定 GitHub CLI 嗎？（用於自動化 push / PR / repo 建立）"):
-        context = setup_github_cli(context)
-    else:
-        print_info("略過。之後可執行 python setup.py --add-github")
+    if not context.get("project_path"):
+        print_fail("未設定專案路徑，無法繼續")
+        sys.exit(1)
 
-    # Step: 雲端模型設定
-    step += 1
-    print_step(step, total_steps, "雲端模型設定（可選）")
+    # ── Step 4: 專案初始化 ──
+    print_step(4, TOTAL_STEPS, "專案初始化")
+    _run_initialization(context)
+
+    # ── Step 5: 雲端模型設定 ──
+    print_step(5, TOTAL_STEPS, "雲端模型設定（可選）")
     if ask_yes_no("要設定雲端模型 API 嗎？"):
         context = setup_cloud_models(context)
     else:
         print_info("略過。之後可執行 python setup.py --add-cloud-models")
 
-    # Step: 本地模型設定
-    step += 1
-    print_step(step, total_steps, "本地模型 Ollama 設定（可選）")
-    if ask_yes_no("要設定本地 Ollama 嗎？", default=False):
-        context = setup_ollama(context)
+    # ── Step 6: 本地模型 Ollama ──
+    print_step(6, TOTAL_STEPS, "本地模型 Ollama（可選）")
+    if context.get("has_ollama"):
+        print_ok("偵測到 Ollama 已安裝")
+        if ask_yes_no("要設定 Ollama 模型嗎？"):
+            context = setup_ollama(context)
+        else:
+            print_info("略過。之後可執行 python setup.py --add-ollama")
     else:
-        print_info("略過。之後可執行 python setup.py --add-ollama")
+        print_info("Ollama 未安裝，跳過此步驟")
+        print_info("如需安裝：https://ollama.com/download")
 
-    # Step: Telegram Bot 設定
-    step += 1
-    print_step(step, total_steps, "Telegram Bot 設定（可選）")
+    # ── Step 7: Telegram Bot 設定 ──
+    print_step(7, TOTAL_STEPS, "Telegram Bot 設定（可選）")
     if ask_yes_no("要設定 Telegram Bot 嗎？"):
         context = setup_telegram(context)
     else:
         print_info("略過。之後可執行 python setup.py --add-telegram")
 
-    # Step: 驗證
-    step += 1
-    print_step(step, total_steps, "驗證安裝結果")
+    # ── Step 8: 驗證 ──
+    print_step(8, TOTAL_STEPS, "驗證安裝結果")
     run_verification(context)
 
     # 完成
     _print_completion(context)
 
 
-def _check_claude_auth() -> None:
-    """檢查 Claude CLI 是否已登入。"""
-    import subprocess
+def _run_initialization(context: Dict) -> None:
+    """執行專案初始化（Step 4）。
 
-    try:
-        result = subprocess.run(
-            ["claude", "--version"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode == 0:
-            print_ok(f"Claude CLI: {result.stdout.strip()}")
+    確認目錄結構、hooks、rules、記憶系統都就緒。
+    如果是剛 clone 的專案，大部分已經存在，只需驗證和補齊。
+    """
+    from .download import install_dependencies, verify_project_structure
+
+    project_path = Path(context["project_path"])
+
+    # 4.1 安裝依賴
+    print_info("檢查 Python 依賴...")
+    if (project_path / "requirements.txt").exists():
+        if install_dependencies(project_path):
+            print_ok("Python 依賴已安裝")
         else:
-            print_warn("Claude CLI 已安裝但可能未登入")
-            print_info("請在安裝完成後執行：claude login")
-    except FileNotFoundError:
-        print_fail("Claude CLI 未安裝")
-        print_info("安裝指令：npm install -g @anthropic-ai/claude-code")
-    except Exception as e:
-        print_warn(f"無法確認 Claude CLI 狀態：{e}")
+            print_warn("依賴安裝失敗，稍後可手動執行 pip install -r requirements.txt")
+    else:
+        print_info("未找到 requirements.txt，跳過依賴安裝")
+
+    # 4.2-4.5 驗證專案結構
+    missing = verify_project_structure(project_path)
+    if not missing:
+        print_ok("專案結構完整")
+    else:
+        print_warn(f"缺少 {len(missing)} 個項目：{', '.join(missing)}")
+        print_info("這些項目會在驗證步驟中詳細列出")
+
+    # 4.6 初始化記憶系統（如果不存在）
+    _ensure_memory_system(project_path)
+
+    # 4.7 確認 .env 存在
+    env_path = project_path / ".env"
+    if env_path.exists():
+        print_ok(".env 已存在")
+    else:
+        print_info(".env 尚未建立（雲端模型設定步驟會自動建立）")
+
+
+def _ensure_memory_system(project_path: Path) -> None:
+    """確保記憶系統已初始化。"""
+    memory_dir = project_path / "data" / "memory"
+    memory_dir.mkdir(parents=True, exist_ok=True)
+    (memory_dir / "sessions").mkdir(exist_ok=True)
+
+    active_context = memory_dir / "active_context.md"
+    if not active_context.exists():
+        active_context.write_text(
+            "# 🧠 Active Context\n更新：（尚未開始）\n\n"
+            "## 目前進行中\n- （無）\n\n"
+            "## 最近完成\n- （無）\n\n"
+            "## 下一步\n- （無）\n",
+            encoding="utf-8",
+        )
+        print_ok("記憶系統已初始化")
+    else:
+        print_ok("記憶系統已存在")
+
+    decisions = memory_dir / "decisions.md"
+    if not decisions.exists():
+        decisions.write_text(
+            "# 📋 重大決策紀錄\n\n（尚無紀錄）\n",
+            encoding="utf-8",
+        )
 
 
 def _print_completion(context: Dict) -> None:
@@ -268,6 +318,9 @@ def _print_completion(context: Dict) -> None:
   📁 專案路徑：{project_path}
 """)
 
+    if context.get("setup_github"):
+        print(f"  🔗 GitHub CLI：已認證")
+
     if context.get("cloud_providers"):
         providers = ", ".join(context["cloud_providers"])
         print(f"  ☁️  雲端模型：{providers}")
@@ -281,10 +334,11 @@ def _print_completion(context: Dict) -> None:
     print(f"""
   {CYAN}下一步：{RESET}
   1. cd {project_path}
-  2. pip install -r requirements.txt
-  3. claude  （直接使用 Claude CLI）
+  2. claude  （開始使用 Claude CLI）
 """)
 
     if context.get("setup_telegram"):
+        tg_path = context.get("telegram_path", "")
         print(f"  或啟動 Telegram Bot：")
+        print(f"  cd {tg_path}")
         print(f"  python -m claude_code_telegram\n")

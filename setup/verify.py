@@ -115,4 +115,8 @@ def run_verification(context: Dict) -> bool:
     if context.get("setup_telegram"):
         print_ok("Telegram Bot 已設定")
 
+    # 12. 檢查 GitHub CLI
+    if context.get("setup_github"):
+        print_ok("GitHub CLI 已認證")
+
     return all_ok

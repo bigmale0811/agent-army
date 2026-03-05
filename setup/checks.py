@@ -1,8 +1,18 @@
-"""Step 1: 環境檢查 — 確認必要工具已安裝。"""
+"""Step 1: 環境檢查 — 確認必要工具已安裝。
+
+檢查項目：
+  - Python ≥ 3.10（必要）
+  - Node.js（必要）
+  - npm（必要）
+  - Git（必要）
+  - GitHub CLI gh（可選）
+  - Ollama（可選）
+"""
 
 import shutil
 import subprocess
 import sys
+from typing import Dict
 
 
 def _check_command(name: str, args: list, extract_version=None) -> tuple:
@@ -30,14 +40,26 @@ def _check_command(name: str, args: list, extract_version=None) -> tuple:
         return True, "(版本未知)"
 
 
-def run_environment_checks() -> bool:
-    """執行環境檢查，回傳是否全部通過。"""
+def run_environment_checks() -> Dict:
+    """執行環境檢查，回傳檢查結果 dict。
+
+    Returns:
+        dict 包含：
+        - all_ok: bool — 所有必要項目是否通過
+        - has_ollama: bool — Ollama 是否已安裝
+        - has_gh: bool — GitHub CLI 是否已安裝
+    """
     from .wizard import print_fail, print_info, print_ok, print_warn
 
     all_ok = True
+    has_ollama = False
+    has_gh = False
 
     # Python
-    py_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    py_version = (
+        f"{sys.version_info.major}.{sys.version_info.minor}"
+        f".{sys.version_info.micro}"
+    )
     if sys.version_info >= (3, 10):
         print_ok(f"Python {py_version}")
     else:
@@ -69,58 +91,25 @@ def run_environment_checks() -> bool:
         print_info("下載：https://git-scm.com/")
         all_ok = False
 
-    # Claude CLI
-    installed, version = _check_command("claude", ["--version"])
-    if installed:
-        print_ok(f"Claude CLI: {version}")
-    else:
-        print_warn("Claude CLI — 未安裝")
-        print_info("安裝：npm install -g @anthropic-ai/claude-code")
-        # 不是必要條件（可以之後裝），但建議
-        from .wizard import ask_yes_no
-        if ask_yes_no("是否自動安裝 Claude CLI？"):
-            _install_claude_cli()
-            # 再檢查一次
-            installed, version = _check_command("claude", ["--version"])
-            if installed:
-                print_ok(f"Claude CLI: {version}（剛安裝）")
-            else:
-                print_fail("Claude CLI 安裝失敗，請手動執行：npm install -g @anthropic-ai/claude-code")
-
     # GitHub CLI（可選）
     installed, version = _check_command("gh", ["--version"])
     if installed:
-        # 只取第一行版本號
         first_line = version.split("\n")[0] if version else version
         print_ok(f"GitHub CLI: {first_line}")
+        has_gh = True
     else:
-        print_info("GitHub CLI (gh) — 未安裝（可選，用於自動化 push/PR）")
+        print_info("GitHub CLI (gh) — 未安裝（下一步會自動安裝）")
 
     # Ollama（可選）
     installed, version = _check_command("ollama", ["--version"])
     if installed:
         print_ok(f"Ollama: {version}")
+        has_ollama = True
     else:
         print_info("Ollama — 未安裝（可選，用於本地模型）")
 
-    return all_ok
-
-
-def _install_claude_cli() -> None:
-    """自動安裝 Claude CLI。"""
-    from .wizard import print_fail, print_info, print_ok
-
-    print_info("正在安裝 Claude CLI...")
-    try:
-        result = subprocess.run(
-            ["npm", "install", "-g", "@anthropic-ai/claude-code"],
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        if result.returncode == 0:
-            print_ok("Claude CLI 安裝成功")
-        else:
-            print_fail(f"安裝失敗：{result.stderr.strip()}")
-    except Exception as e:
-        print_fail(f"安裝過程出錯：{e}")
+    return {
+        "all_ok": all_ok,
+        "has_ollama": has_ollama,
+        "has_gh": has_gh,
+    }

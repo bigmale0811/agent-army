@@ -2,8 +2,7 @@
 更新：2026-03-06
 
 ## 目前進行中
-- **Setup Wizard 品質補救**：使用者指出開發跳過 ECC 流程，需要補跑測試和審查
-- **claude-code-telegram 部署問題**：新電腦 clone 失敗，repo 可能不在 GitHub
+- Singer Agent v0.3 端對端測試（仍待執行）
 
 ## 最近完成
 - **✅ LLM 雲端模組** (`src/llm/`)：
@@ -18,6 +17,13 @@
   - `.env`：`CLAUDE_MAX_TURNS=50`、`CLAUDE_TIMEOUT_SECONDS=900`
   - `sdk_integration.py`：空回應合成摘要
 - **✅ Git 初始提交 + Push** 到 `bigmale0811/agent-army`
+- **✅ GitHub CLI 安裝 + 認證自動化**：
+  - 安裝 gh CLI via winget、Classic Token 認證
+  - `bigmale0811/claude-code-telegram` repo 建立並 push
+- **✅ GitHub CLI 加入 Setup Wizard**（遵循 ECC 流程 TDD→Review→Verify）：
+  - 新模組 `setup/github_cli.py`：安裝偵測、winget 安裝、Token 驗證認證
+  - 25 個新測試（setup 測試共 39 個）
+  - Code Review 修復 2 CRITICAL + 4 HIGH 問題
 
 ## ❌ ECC 流程違規（教訓）
 - 開發 LLM 模組和 Setup Wizard 時跳過了：
