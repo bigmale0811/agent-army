@@ -172,24 +172,63 @@ LOG_LEVEL=INFO
 
 
 def _install_telegram_deps(telegram_path: Path) -> None:
-    """安裝 Telegram Bot 依賴。"""
-    from .wizard import print_fail, print_info, print_ok
+    """安裝 Telegram Bot 依賴。
 
-    print_info("正在安裝依賴...")
+    支援三種安裝方式（依優先順序）：
+    1. requirements.txt → pip install -r
+    2. pyproject.toml + poetry 可用 → poetry install
+    3. pyproject.toml → pip install .
+    """
+    import shutil
+
+    from .wizard import print_fail, print_info, print_ok, print_warn
+
+    print_info("正在安裝依賴（可能需要 1~3 分鐘）...")
+
     req_file = telegram_path / "requirements.txt"
+    pyproject_file = telegram_path / "pyproject.toml"
+
+    # 方法 1：requirements.txt
     if req_file.exists():
-        try:
-            result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "-r", str(req_file)],
-                capture_output=True,
-                text=True,
-                timeout=300,
-            )
-            if result.returncode == 0:
-                print_ok("依賴安裝完成")
-            else:
-                print_fail(f"安裝失敗：{result.stderr.strip()[:200]}")
-        except Exception as e:
-            print_fail(f"安裝失敗：{e}")
+        print_info("偵測到 requirements.txt，使用 pip install...")
+        cmd = [sys.executable, "-m", "pip", "install", "-r", str(req_file)]
+
+    # 方法 2：pyproject.toml + poetry
+    elif pyproject_file.exists() and shutil.which("poetry"):
+        print_info("偵測到 pyproject.toml，使用 poetry install...")
+        cmd = ["poetry", "install", "--no-interaction"]
+
+    # 方法 3：pyproject.toml + pip install .
+    elif pyproject_file.exists():
+        print_info("偵測到 pyproject.toml，使用 pip install...")
+        cmd = [sys.executable, "-m", "pip", "install", str(telegram_path)]
+
     else:
-        print_fail(f"找不到 {req_file}")
+        print_fail("找不到 requirements.txt 或 pyproject.toml")
+        return
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(telegram_path),
+        )
+        if result.returncode == 0:
+            print_ok("依賴安裝完成")
+        else:
+            # 顯示錯誤但不閃退
+            stderr = result.stderr.strip()[:300] if result.stderr else ""
+            print_fail(f"安裝失敗：{stderr}")
+            print_warn("可稍後手動執行：")
+            if "poetry" in cmd[0] if isinstance(cmd[0], str) else False:
+                print_info(f"  cd {telegram_path} && poetry install")
+            else:
+                print_info(f"  cd {telegram_path} && pip install .")
+    except subprocess.TimeoutExpired:
+        print_fail("安裝逾時（超過 5 分鐘）")
+        print_warn(f"請手動執行：cd {telegram_path} && pip install .")
+    except Exception as e:
+        print_fail(f"安裝失敗：{e}")
+        print_warn(f"請手動執行：cd {telegram_path} && pip install .")
