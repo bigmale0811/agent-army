@@ -282,3 +282,86 @@ class TestFindGhExecutable:
         mock_exists.return_value = False
         result = find_gh_executable()
         assert result is None
+
+
+class TestInstallGhDirectDownload:
+    """測試直接從 GitHub 下載 gh MSI 的備援方案。"""
+
+    def test_function_exists(self):
+        """install_gh_direct_download 函數存在。"""
+        from setup.github_cli import install_gh_direct_download
+        assert callable(install_gh_direct_download)
+
+    @patch("urllib.request.urlopen")
+    @patch("urllib.request.urlretrieve")
+    @patch("subprocess.run")
+    def test_download_success(self, mock_run, mock_retrieve, mock_urlopen):
+        """成功下載並安裝 gh MSI。"""
+        import json
+        from setup.github_cli import install_gh_direct_download
+
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps({
+            "tag_name": "v2.65.0",
+        }).encode()
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+        mock_run.return_value = MagicMock(returncode=0)
+
+        result = install_gh_direct_download()
+        assert result is True
+
+    @patch("urllib.request.urlopen")
+    def test_download_network_error(self, mock_urlopen):
+        """網路錯誤時回傳 False。"""
+        import urllib.error
+        from setup.github_cli import install_gh_direct_download
+
+        mock_urlopen.side_effect = urllib.error.URLError("Network error")
+        result = install_gh_direct_download()
+        assert result is False
+
+    @patch("urllib.request.urlopen")
+    @patch("urllib.request.urlretrieve")
+    @patch("subprocess.run")
+    def test_msiexec_failure(self, mock_run, mock_retrieve, mock_urlopen):
+        """msiexec 安裝失敗時回傳 False。"""
+        import json
+        from setup.github_cli import install_gh_direct_download
+
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps({
+            "tag_name": "v2.65.0",
+        }).encode()
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+        mock_run.return_value = MagicMock(returncode=1)
+
+        result = install_gh_direct_download()
+        assert result is False
+
+    @patch("urllib.request.urlopen")
+    @patch("urllib.request.urlretrieve")
+    @patch("subprocess.run")
+    def test_downloads_correct_msi_url(self, mock_run, mock_retrieve, mock_urlopen):
+        """下載的 MSI URL 包含正確版本號。"""
+        import json
+        from setup.github_cli import install_gh_direct_download
+
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps({
+            "tag_name": "v2.65.0",
+        }).encode()
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+        mock_run.return_value = MagicMock(returncode=0)
+
+        install_gh_direct_download()
+
+        # 確認下載的 URL 包含版本號
+        download_url = mock_retrieve.call_args[0][0]
+        assert "2.65.0" in download_url
+        assert "windows_amd64.msi" in download_url

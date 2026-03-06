@@ -2,6 +2,7 @@
 更新：2026-03-06
 
 ## 目前進行中
+- ✅ 修復 gh CLI 安裝備援（winget 不可用時直接下載 MSI）— 已完成
 - Singer Agent v0.3 端對端測試（仍待執行）
 
 ## 最近完成
@@ -20,10 +21,19 @@
 - **✅ GitHub CLI 安裝 + 認證自動化**：
   - 安裝 gh CLI via winget、Classic Token 認證
   - `bigmale0811/claude-code-telegram` repo 建立並 push
-- **✅ GitHub CLI 加入 Setup Wizard**（遵循 ECC 流程 TDD→Review→Verify）：
-  - 新模組 `setup/github_cli.py`：安裝偵測、winget 安裝、Token 驗證認證
-  - 25 個新測試（setup 測試共 39 個）
-  - Code Review 修復 2 CRITICAL + 4 HIGH 問題
+- **✅ GitHub CLI 加入 Setup Wizard**（遵循 ECC 流程 TDD→Review→Verify）
+- **✅ Setup Wizard v2.0 完全重寫**：
+  - 架構分離：install.py（獨立安裝包 Step 1~3）+ setup.py（專案設定 Step 4~8）
+  - install.py 是零依賴、純 stdlib 單一檔案，可獨立分發
+  - 流程：環境檢查 → gh 安裝 → clone agent-army → pip install → 雲端模型 → Ollama → Telegram → 驗證
+  - 移除 Claude CLI 登入步驟
+  - 66 個 setup 測試全部通過
+- **✅ gh CLI 安裝備援機制**：
+  - 問題：winget 不可用時 gh 安裝直接失敗
+  - 修復：加入 `_download_gh_msi()` / `install_gh_direct_download()`
+  - 安裝順序：winget → 直接從 GitHub Releases 下載 MSI → 手動提示
+  - 用 urllib.request（stdlib）下載，msiexec 靜默安裝
+  - 76 個 setup 測試全部通過（遵循 TDD）
 
 ## ❌ ECC 流程違規（教訓）
 - 開發 LLM 模組和 Setup Wizard 時跳過了：
@@ -55,3 +65,7 @@
 - 透過 `D:\Projects\claude-code-telegram` 的 Telegram Bot 互動
 - Bot 用 `claude-agent-sdk`，`cwd=D:\Projects\agent-army`
 - Git repo：`https://github.com/bigmale0811/agent-army.git`
+
+## ⚡ 最近壓縮事件
+- [2026-03-06 08:35:58] Context 被自動壓縮，以上內容是壓縮前的狀態
+- **請重新讀取此檔案確認進度**

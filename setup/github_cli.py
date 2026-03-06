@@ -5,9 +5,15 @@
 只使用 Python 標準庫。
 """
 
+import json
+import os
 import shutil
 import subprocess
 import sys
+import tempfile
+import urllib.error
+import urllib.request
+import zipfile
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
@@ -16,11 +22,14 @@ VALID_TOKEN_PREFIXES = ("ghp_", "github_pat_", "gho_", "ghs_", "ghr_")
 
 
 # gh 常見安裝路徑（Windows）
+_localappdata = os.environ.get("LOCALAPPDATA", "")
 _COMMON_GH_PATHS = [
     Path("C:/Program Files/GitHub CLI/gh.exe"),
     Path("C:/Program Files (x86)/GitHub CLI/gh.exe"),
     Path.home() / "scoop" / "shims" / "gh.exe",
 ]
+if _localappdata:
+    _COMMON_GH_PATHS.append(Path(_localappdata) / "Programs" / "gh" / "bin" / "gh.exe")
 
 
 def find_gh_executable() -> Optional[str]:
@@ -110,6 +119,125 @@ def install_gh_with_winget() -> bool:
         return False
 
 
+def install_gh_direct_download() -> bool:
+    """從 GitHub Releases 直接下載並安裝 gh CLI MSI。
+
+    不依賴 winget，使用 urllib（stdlib）直接下載。
+    僅支援 Windows amd64。
+
+    Returns:
+        True 代表安裝成功。
+    """
+    try:
+        # 1. 從 GitHub API 取得最新版本
+        api_url = "https://api.github.com/repos/cli/cli/releases/latest"
+        req = urllib.request.Request(
+            api_url,
+            headers={
+                "Accept": "application/vnd.github.v3+json",
+                "User-Agent": "agent-army-installer",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode())
+        tag = data["tag_name"]  # 例：v2.65.0
+        version = tag.lstrip("v")
+
+        # 2. 下載 MSI
+        msi_url = (
+            f"https://github.com/cli/cli/releases/download/"
+            f"{tag}/gh_{version}_windows_amd64.msi"
+        )
+        tmp_dir = tempfile.mkdtemp()
+        msi_path = os.path.join(tmp_dir, f"gh_{version}_windows_amd64.msi")
+        urllib.request.urlretrieve(msi_url, msi_path)
+
+        # 3. 靜默安裝
+        r = subprocess.run(
+            ["msiexec", "/i", msi_path, "/quiet", "/norestart"],
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+
+        # 4. 清理暫存檔
+        try:
+            os.unlink(msi_path)
+            os.rmdir(tmp_dir)
+        except OSError:
+            pass
+
+        return r.returncode == 0
+
+    except (urllib.error.URLError, urllib.error.HTTPError):
+        return False
+    except subprocess.TimeoutExpired:
+        return False
+    except Exception:
+        return False
+
+
+def install_gh_direct_download_zip() -> bool:
+    """從 GitHub Releases 下載 gh CLI zip 並解壓縮（不需管理員權限）。
+
+    解壓縮到 %LOCALAPPDATA%\\Programs\\gh\\。
+
+    Returns:
+        True 代表安裝成功。
+    """
+    try:
+        api_url = "https://api.github.com/repos/cli/cli/releases/latest"
+        req = urllib.request.Request(
+            api_url,
+            headers={
+                "Accept": "application/vnd.github.v3+json",
+                "User-Agent": "agent-army-installer",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode())
+        tag = data["tag_name"]
+        version = tag.lstrip("v")
+
+        zip_url = (
+            f"https://github.com/cli/cli/releases/download/"
+            f"{tag}/gh_{version}_windows_amd64.zip"
+        )
+        tmp_dir = tempfile.mkdtemp()
+        zip_path = os.path.join(tmp_dir, f"gh_{version}_windows_amd64.zip")
+        urllib.request.urlretrieve(zip_url, zip_path)
+
+        local_app = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+        gh_install_dir = os.path.join(local_app, "Programs", "gh")
+        os.makedirs(gh_install_dir, exist_ok=True)
+
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            for member in zf.namelist():
+                parts = member.split("/", 1)
+                if len(parts) > 1 and parts[1]:
+                    target_path = os.path.join(gh_install_dir, parts[1])
+                    if member.endswith("/"):
+                        os.makedirs(target_path, exist_ok=True)
+                    else:
+                        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                        with zf.open(member) as src, open(target_path, "wb") as dst:
+                            dst.write(src.read())
+
+        try:
+            os.unlink(zip_path)
+            os.rmdir(tmp_dir)
+        except OSError:
+            pass
+
+        gh_exe = os.path.join(gh_install_dir, "bin", "gh.exe")
+        return os.path.exists(gh_exe)
+
+    except (urllib.error.URLError, urllib.error.HTTPError):
+        return False
+    except Exception:
+        return False
+
+
 def authenticate_with_token(token: str, gh_path: Optional[str] = None) -> bool:
     """使用 Personal Access Token 認證 gh。
 
@@ -165,16 +293,32 @@ def setup_github_cli(context: Dict) -> Dict:
         print_info("GitHub CLI 用於自動化 repo 建立、push、PR 等操作")
 
         if sys.platform == "win32":
+            # 方法 1：winget
             print_info("正在用 winget 自動安裝...")
-            success = install_gh_with_winget()
-            if success:
-                print_ok("GitHub CLI 安裝成功")
-                # 重新尋找路徑
+            winget_ok = install_gh_with_winget()
+            if winget_ok:
+                print_ok("GitHub CLI 安裝成功（winget）")
                 gh_path = find_gh_executable()
             else:
-                print_fail("自動安裝失敗")
-                print_info("請手動安裝：https://cli.github.com/")
-                return context
+                # 方法 2：直接從 GitHub 下載 MSI（需管理員權限）
+                print_warn("winget 不可用，嘗試直接下載...")
+                print_info("嘗試 MSI 安裝...")
+                msi_ok = install_gh_direct_download()
+                if msi_ok:
+                    print_ok("GitHub CLI 安裝成功（MSI）")
+                    gh_path = find_gh_executable()
+                else:
+                    # 方法 3：zip 解壓縮（不需管理員權限）
+                    print_warn("MSI 需管理員權限，改用 zip 解壓縮...")
+                    zip_ok = install_gh_direct_download_zip()
+                    if zip_ok:
+                        print_ok("GitHub CLI 安裝成功（zip 解壓縮）")
+                        gh_path = find_gh_executable()
+                    else:
+                        print_fail("自動安裝失敗")
+                        print_info("請手動安裝：https://cli.github.com/")
+                        print_info("下載頁面：https://github.com/cli/cli/releases/latest")
+                        return context
         else:
             print_info("請手動安裝：https://cli.github.com/")
             return context

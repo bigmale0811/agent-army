@@ -15,11 +15,16 @@
     Step 4~8: 自動執行 setup.py 完成剩餘設定
 """
 
+import json
 import os
 import platform
 import shutil
 import subprocess
 import sys
+import tempfile
+import urllib.error
+import urllib.request
+import zipfile
 from pathlib import Path
 
 # ── 常數 ──
@@ -39,10 +44,13 @@ RESET = "\033[0m"
 VALID_TOKEN_PREFIXES = ("ghp_", "github_pat_", "gho_", "ghs_", "ghr_")
 
 # gh 常見安裝路徑（Windows）
+_localappdata = os.environ.get("LOCALAPPDATA", "")
 GH_COMMON_PATHS = [
     Path("C:/Program Files/GitHub CLI/gh.exe"),
     Path("C:/Program Files (x86)/GitHub CLI/gh.exe"),
+    Path(_localappdata) / "Programs" / "gh" / "bin" / "gh.exe" if _localappdata else None,
 ]
+GH_COMMON_PATHS = [p for p in GH_COMMON_PATHS if p is not None]
 
 
 # ── 輸出工具 ──
@@ -179,8 +187,150 @@ def _find_gh():
     return None
 
 
+def _download_gh_msi():
+    """從 GitHub Releases 直接下載並安裝 gh CLI MSI。
+
+    不依賴 winget，使用 urllib（stdlib）直接下載。
+    僅支援 Windows amd64。
+
+    Returns:
+        True 代表安裝成功。
+    """
+    try:
+        # 1. 從 GitHub API 取得最新版本
+        api_url = "https://api.github.com/repos/cli/cli/releases/latest"
+        req = urllib.request.Request(
+            api_url,
+            headers={
+                "Accept": "application/vnd.github.v3+json",
+                "User-Agent": "agent-army-installer",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode())
+        tag = data["tag_name"]  # 例：v2.65.0
+        version = tag.lstrip("v")
+
+        # 2. 下載 MSI
+        msi_url = (
+            f"https://github.com/cli/cli/releases/download/"
+            f"{tag}/gh_{version}_windows_amd64.msi"
+        )
+        info(f"下載 gh v{version}...")
+        tmp_dir = tempfile.mkdtemp()
+        msi_path = os.path.join(tmp_dir, f"gh_{version}_windows_amd64.msi")
+        urllib.request.urlretrieve(msi_url, msi_path)
+
+        # 3. 靜默安裝
+        info("正在安裝（msiexec）...")
+        r = subprocess.run(
+            ["msiexec", "/i", msi_path, "/quiet", "/norestart"],
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+
+        # 4. 清理暫存檔
+        try:
+            os.unlink(msi_path)
+            os.rmdir(tmp_dir)
+        except OSError:
+            pass
+
+        return r.returncode == 0
+
+    except (urllib.error.URLError, urllib.error.HTTPError) as e:
+        fail(f"下載失敗：{e}")
+        return False
+    except subprocess.TimeoutExpired:
+        fail("安裝逾時")
+        return False
+    except Exception as e:
+        fail(f"直接下載安裝失敗：{e}")
+        return False
+
+
+def _download_gh_zip():
+    """從 GitHub Releases 下載 gh CLI zip 並解壓縮（不需管理員權限）。
+
+    解壓縮到 %LOCALAPPDATA%\\Programs\\gh\\，不需要 msiexec 或管理員權限。
+
+    Returns:
+        True 代表安裝成功。
+    """
+    try:
+        # 1. 取得最新版本
+        api_url = "https://api.github.com/repos/cli/cli/releases/latest"
+        req = urllib.request.Request(
+            api_url,
+            headers={
+                "Accept": "application/vnd.github.v3+json",
+                "User-Agent": "agent-army-installer",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode())
+        tag = data["tag_name"]
+        version = tag.lstrip("v")
+
+        # 2. 下載 zip
+        zip_url = (
+            f"https://github.com/cli/cli/releases/download/"
+            f"{tag}/gh_{version}_windows_amd64.zip"
+        )
+        info(f"下載 gh v{version} (zip)...")
+        tmp_dir = tempfile.mkdtemp()
+        zip_path = os.path.join(tmp_dir, f"gh_{version}_windows_amd64.zip")
+        urllib.request.urlretrieve(zip_url, zip_path)
+
+        # 3. 解壓縮到 LOCALAPPDATA\Programs\gh
+        local_app = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+        gh_install_dir = os.path.join(local_app, "Programs", "gh")
+        os.makedirs(gh_install_dir, exist_ok=True)
+
+        info(f"解壓縮到 {gh_install_dir}...")
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            # zip 裡面有一層目錄 gh_X.Y.Z_windows_amd64/
+            for member in zf.namelist():
+                # 去掉第一層目錄前綴
+                parts = member.split("/", 1)
+                if len(parts) > 1 and parts[1]:
+                    target_path = os.path.join(gh_install_dir, parts[1])
+                    if member.endswith("/"):
+                        os.makedirs(target_path, exist_ok=True)
+                    else:
+                        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                        with zf.open(member) as src, open(target_path, "wb") as dst:
+                            dst.write(src.read())
+
+        # 4. 清理暫存檔
+        try:
+            os.unlink(zip_path)
+            os.rmdir(tmp_dir)
+        except OSError:
+            pass
+
+        # 5. 確認 gh.exe 存在
+        gh_exe = os.path.join(gh_install_dir, "bin", "gh.exe")
+        if os.path.exists(gh_exe):
+            ok(f"gh 已安裝到 {gh_exe}")
+            return True
+
+        warn("解壓縮完成但找不到 gh.exe")
+        return False
+
+    except (urllib.error.URLError, urllib.error.HTTPError) as e:
+        fail(f"下載失敗：{e}")
+        return False
+    except Exception as e:
+        fail(f"zip 安裝失敗：{e}")
+        return False
+
+
 def setup_github_cli():
     """安裝並認證 GitHub CLI。
+
+    安裝順序：winget → MSI → zip 解壓縮 → 手動提示。
 
     Returns:
         gh 執行檔路徑，或 None。
@@ -193,7 +343,9 @@ def setup_github_cli():
             warn("非 Windows 系統，請手動安裝 gh：https://cli.github.com/")
             return None
 
+        # 方法 1：winget
         info("正在用 winget 安裝 GitHub CLI...")
+        winget_ok = False
         try:
             r = subprocess.run(
                 ["winget", "install", "--id", "GitHub.cli",
@@ -201,14 +353,29 @@ def setup_github_cli():
                 capture_output=True, text=True, timeout=180,
             )
             if r.returncode == 0:
-                ok("GitHub CLI 安裝成功")
+                ok("GitHub CLI 安裝成功（winget）")
+                winget_ok = True
+                gh = _find_gh()
+        except Exception:
+            warn("winget 不可用，嘗試直接下載...")
+
+        # 方法 2：直接從 GitHub 下載 MSI（需管理員權限）
+        if not winget_ok:
+            info("嘗試從 GitHub Releases 直接下載 MSI...")
+            if _download_gh_msi():
+                ok("GitHub CLI 安裝成功（MSI）")
+                gh = _find_gh()
+
+        # 方法 3：下載 zip 解壓縮（不需管理員權限）
+        if not winget_ok and not gh:
+            info("MSI 需管理員權限，改用 zip 解壓縮...")
+            if _download_gh_zip():
+                ok("GitHub CLI 安裝成功（zip 解壓縮）")
                 gh = _find_gh()
             else:
-                fail("安裝失敗，請手動安裝：https://cli.github.com/")
+                fail("自動安裝失敗，請手動安裝：https://cli.github.com/")
+                info("下載頁面：https://github.com/cli/cli/releases/latest")
                 return None
-        except Exception:
-            fail("winget 不可用，請手動安裝 gh")
-            return None
 
     if not gh:
         fail("找不到 gh 執行檔")
@@ -260,6 +427,55 @@ def setup_github_cli():
 
 
 # ── Step 3: Clone agent-army ──
+
+def _check_existing_repo(target_path):
+    """檢查目標路徑是否為既有的 git repo。
+
+    Args:
+        target_path: 要檢查的路徑。
+
+    Returns:
+        'agent-army': 是 agent-army repo。
+        'other-repo': 是其他 git repo。
+        'not-repo': 不是 git repo。
+    """
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(target_path), "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if r.returncode == 0:
+            url = r.stdout.strip()
+            if "agent-army" in url:
+                return "agent-army"
+            return "other-repo"
+        return "not-repo"
+    except Exception:
+        return "not-repo"
+
+
+def _pull_agent_army(target_path):
+    """在既有的 agent-army repo 中執行 git pull。
+
+    Args:
+        target_path: agent-army 專案路徑。
+
+    Returns:
+        True 代表成功。
+    """
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(target_path), "pull", "--ff-only"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        return r.returncode == 0
+    except Exception:
+        return False
+
 
 def clone_agent_army(target_path, repo_url=None):
     """Clone agent-army 到指定路徑。
@@ -357,15 +573,47 @@ def main():
 
     if target.exists() and (target / "CLAUDE.md").exists():
         ok(f"偵測到既有專案：{target}")
-        info("跳過下載")
+        # 檢查是否為 agent-army repo，如果是就 pull 最新
+        repo_status = _check_existing_repo(target)
+        if repo_status == "agent-army":
+            info("嘗試更新到最新版本...")
+            if _pull_agent_army(target):
+                ok("已更新到最新版本")
+            else:
+                warn("更新失敗，使用既有版本繼續")
+        else:
+            info("跳過下載")
     elif target.exists() and any(target.iterdir()):
-        warn(f"路徑 {target} 已有檔案")
-        if not ask_yn("要繼續嗎？（會嘗試 clone 到此目錄）", default=False):
-            sys.exit(1)
-        if not clone_agent_army(target):
-            fail("下載失敗")
-            sys.exit(1)
-        ok("下載完成！")
+        # 非空目錄 — 檢查是否為 git repo
+        repo_status = _check_existing_repo(target)
+        if repo_status == "agent-army":
+            ok(f"偵測到既有 agent-army repo：{target}")
+            info("嘗試更新到最新版本...")
+            if _pull_agent_army(target):
+                ok("已更新到最新版本")
+            else:
+                warn("更新失敗，使用既有版本繼續")
+        elif repo_status == "other-repo":
+            fail(f"路徑 {target} 是其他 git 專案")
+            info("請選擇其他安裝路徑")
+            new_path = ask("新的安裝路徑", default=str(target.parent / "agent-army"))
+            target = Path(new_path)
+            if not clone_agent_army(target):
+                fail("下載失敗")
+                sys.exit(1)
+            ok("下載完成！")
+        else:
+            warn(f"路徑 {target} 已有檔案（非 git repo）")
+            info("git clone 無法在非空目錄執行")
+            new_path = ask("請選擇空的安裝路徑", default=str(target.parent / "agent-army"))
+            target = Path(new_path)
+            if target.exists() and any(target.iterdir()):
+                fail("該路徑也非空，請手動清理後重新執行")
+                sys.exit(1)
+            if not clone_agent_army(target):
+                fail("下載失敗")
+                sys.exit(1)
+            ok("下載完成！")
     else:
         info(f"正在從 GitHub 下載...")
         info(f"來源：{AGENT_ARMY_REPO}")
