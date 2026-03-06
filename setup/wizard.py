@@ -30,6 +30,10 @@ CYAN = "\033[96m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
 
+# ── 模式旗標（由 run_wizard 設定）──
+_DRY_RUN = False
+_AUTO_MODE = False
+
 TOTAL_STEPS = 5  # Step 4~8 共 5 步
 
 
@@ -63,6 +67,9 @@ def print_step(step: int, total: int, title: str) -> None:
 
 def ask_yes_no(prompt: str, default: bool = True) -> bool:
     """詢問使用者 Yes/No 問題。"""
+    if _AUTO_MODE:
+        print_info(f"[AUTO] {prompt} → {'Y' if default else 'N'}")
+        return default
     suffix = "(Y/n)" if default else "(y/N)"
     while True:
         answer = input(f"  {prompt} {suffix} ").strip().lower()
@@ -77,6 +84,9 @@ def ask_yes_no(prompt: str, default: bool = True) -> bool:
 
 def ask_input(prompt: str, default: str = "") -> str:
     """詢問使用者輸入。"""
+    if _AUTO_MODE:
+        print_info(f"[AUTO] {prompt} → {default}")
+        return default
     suffix = f" [{default}]" if default else ""
     answer = input(f"  {prompt}{suffix}: ").strip()
     return answer or default
@@ -84,6 +94,9 @@ def ask_input(prompt: str, default: str = "") -> str:
 
 def ask_choice(prompt: str, choices: List[str]) -> str:
     """讓使用者從選項中選擇。"""
+    if _AUTO_MODE:
+        print_info(f"[AUTO] {prompt} → {choices[0]}")
+        return choices[0]
     print(f"  {prompt}")
     for i, choice in enumerate(choices, 1):
         print(f"    {i}. {choice}")
@@ -100,6 +113,9 @@ def ask_choice(prompt: str, choices: List[str]) -> str:
 
 def ask_multi_choice(prompt: str, choices: List[str]) -> List[str]:
     """讓使用者選擇多個選項（用逗號分隔）。"""
+    if _AUTO_MODE:
+        print_info(f"[AUTO] {prompt} → （略過）")
+        return []
     print(f"  {prompt}")
     for i, choice in enumerate(choices, 1):
         print(f"    {i}. {choice}")
@@ -146,19 +162,29 @@ def _is_existing_project(path: Path) -> bool:
     return (path / "CLAUDE.md").exists() and (path / ".claude" / "settings.json").exists()
 
 
-def run_wizard(project_path: Optional[Path] = None) -> None:
+def run_wizard(
+    project_path: Optional[Path] = None,
+    dry_run: bool = False,
+    auto_mode: bool = False,
+) -> None:
     """執行 Setup Wizard（Step 4~8）。
 
-    此函數在已有 agent-army 專案的目錄內執行。
-    Step 1~3 由 install.py 負責。
-
-    Step 4: 專案初始化
-    Step 5: 雲端模型設定
-    Step 6: 本地模型 Ollama
-    Step 7: Telegram Bot 設定
-    Step 8: 驗證
+    Args:
+        project_path: 專案路徑。
+        dry_run: True 時跳過真實操作（E2E 測試用）。
+        auto_mode: True 時所有提示用預設值。
     """
+    global _DRY_RUN, _AUTO_MODE
+    _DRY_RUN = dry_run
+    _AUTO_MODE = auto_mode
+
     _enable_ansi_windows()
+    # 確保 UTF-8 輸出
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     print_banner()
 
     # 確定專案路徑
@@ -230,7 +256,9 @@ def _run_initialization(context: Dict) -> None:
 
     # 安裝依賴
     print_info("檢查 Python 依賴...")
-    if (project_path / "requirements.txt").exists():
+    if _DRY_RUN:
+        print_info("[DRY RUN] 會執行: pip install -r requirements.txt")
+    elif (project_path / "requirements.txt").exists():
         if install_dependencies(project_path):
             print_ok("Python 依賴已安裝")
         else:

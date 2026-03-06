@@ -56,6 +56,16 @@ def main() -> None:
         action="store_true",
         help="只驗證安裝結果",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="模擬執行，不真正安裝（E2E 測試用）",
+    )
+    parser.add_argument(
+        "--auto",
+        action="store_true",
+        help="自動回答所有提示（使用預設值）",
+    )
 
     args = parser.parse_args()
 
@@ -113,7 +123,11 @@ def main() -> None:
     # 完整精靈模式（Step 4~8）
     from setup.wizard import run_wizard
 
-    run_wizard(project_path=args.path or Path.cwd())
+    run_wizard(
+        project_path=args.path or Path.cwd(),
+        dry_run=args.dry_run,
+        auto_mode=args.auto,
+    )
 
 
 if __name__ == "__main__":

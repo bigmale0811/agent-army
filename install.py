@@ -5,8 +5,9 @@
 只使用 Python 標準庫，可在全新電腦上直接執行。
 
 使用方式：
-    python install.py              # 完整安裝
-    python install.py --path D:\\Projects\\agent-army  # 指定路徑
+    python install.py                        # 完整安裝
+    python install.py --path D:\\my\\path    # 指定路徑
+    python install.py --dry-run --auto       # E2E 模擬測試（不裝東西、不等輸入）
 
 流程：
     Step 1: 環境檢查 (Python, Node, Git)
@@ -26,6 +27,10 @@ import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
+
+# ── 模式旗標 ──
+DRY_RUN = False   # --dry-run: 走流程但不執行真實操作
+AUTO_MODE = False  # --auto: 所有提示用預設值，不等人輸入
 
 # ── 常數 ──
 AGENT_ARMY_REPO = "https://github.com/bigmale0811/agent-army.git"
@@ -56,7 +61,7 @@ GH_COMMON_PATHS = [p for p in GH_COMMON_PATHS if p is not None]
 # ── 輸出工具 ──
 
 def _enable_ansi():
-    """在 Windows 上啟用 ANSI 顏色。"""
+    """在 Windows 上啟用 ANSI 顏色和 UTF-8 輸出。"""
     if sys.platform == "win32":
         try:
             import ctypes
@@ -64,6 +69,12 @@ def _enable_ansi():
             kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
         except Exception:
             pass
+    # 確保 stdout/stderr 支援 UTF-8（避免 emoji 編碼錯誤）
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 
 def ok(msg):
@@ -89,12 +100,18 @@ def step_header(num, total, title):
 
 
 def ask(prompt, default=""):
+    if AUTO_MODE:
+        info(f"[AUTO] {prompt} → {default}")
+        return default
     suffix = f" [{default}]" if default else ""
     answer = input(f"  {prompt}{suffix}: ").strip()
     return answer or default
 
 
 def ask_yn(prompt, default=True):
+    if AUTO_MODE:
+        info(f"[AUTO] {prompt} → {'Y' if default else 'N'}")
+        return default
     suffix = "(Y/n)" if default else "(y/N)"
     while True:
         answer = input(f"  {prompt} {suffix} ").strip().lower()
@@ -339,6 +356,11 @@ def setup_github_cli():
 
     # 安裝
     if not gh:
+        if DRY_RUN:
+            info("[DRY RUN] 會執行: 安裝 GitHub CLI (winget → MSI → zip)")
+            ok("[DRY RUN] GitHub CLI 安裝（模擬）")
+            return "gh"  # 模擬回傳
+
         if sys.platform != "win32":
             warn("非 Windows 系統，請手動安裝 gh：https://cli.github.com/")
             return None
@@ -384,6 +406,11 @@ def setup_github_cli():
     ok(f"GitHub CLI: {gh}")
 
     # 認證
+    if DRY_RUN:
+        info("[DRY RUN] 會執行: gh auth status / gh auth login --with-token")
+        ok("[DRY RUN] GitHub 認證（模擬）")
+        return gh
+
     try:
         r = subprocess.run(
             [gh, "auth", "status"],
@@ -465,6 +492,10 @@ def _pull_agent_army(target_path):
     Returns:
         True 代表成功。
     """
+    if DRY_RUN:
+        info(f"[DRY RUN] 會執行: git -C {target_path} pull --ff-only")
+        return True
+
     try:
         r = subprocess.run(
             ["git", "-C", str(target_path), "pull", "--ff-only"],
@@ -488,6 +519,10 @@ def clone_agent_army(target_path, repo_url=None):
         True 代表成功。
     """
     url = repo_url or AGENT_ARMY_REPO
+
+    if DRY_RUN:
+        info(f"[DRY RUN] 會執行: git clone {url} {target_path}")
+        return True
 
     try:
         r = subprocess.run(
@@ -522,10 +557,18 @@ def run_setup_wizard(project_path):
         fail(f"找不到 {setup_py}")
         return False
 
+    if DRY_RUN:
+        info(f"[DRY RUN] 會執行: python {setup_py} --dry-run --auto")
+        ok("[DRY RUN] Setup Wizard 完成（模擬）")
+        return True
+
     info("啟動 Setup Wizard...")
+    cmd = [sys.executable, str(setup_py)]
+    if AUTO_MODE:
+        cmd.append("--auto")
     try:
         r = subprocess.run(
-            [sys.executable, str(setup_py)],
+            cmd,
             cwd=str(project_path),
             timeout=600,
         )
@@ -633,8 +676,22 @@ def main():
     run_setup_wizard(target)
 
 
+def _parse_args():
+    """解析命令列參數。"""
+    global DRY_RUN, AUTO_MODE, DEFAULT_INSTALL_PATH
+    args = sys.argv[1:]
+    i = 0
+    while i < len(args):
+        if args[i] == "--dry-run":
+            DRY_RUN = True
+        elif args[i] == "--auto":
+            AUTO_MODE = True
+        elif args[i] == "--path" and i + 1 < len(args):
+            DEFAULT_INSTALL_PATH = args[i + 1]
+            i += 1
+        i += 1
+
+
 if __name__ == "__main__":
-    # 支援 --path 參數
-    if len(sys.argv) > 2 and sys.argv[1] == "--path":
-        DEFAULT_INSTALL_PATH = sys.argv[2]
+    _parse_args()
     main()
