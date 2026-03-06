@@ -67,70 +67,62 @@ Claude Code Opus 4.6 as orchestrator, with subagents and local Ollama.
 - `common/`: development-workflow, testing, security, coding-style, git-workflow, agents, hooks, patterns, performance
 - `python/`: coding-style, testing, security, patterns, hooks
 
-## ECC v2 Standard Workflow（標準開發流程，最高優先級）
+## FSM 狀態機工作流（最高優先級）
 
-文件驅動、角色分離、有迴圈的完整開發流程。
-🚦 = 必須等使用者確認才能繼續。
-完整指令：`/orchestrate feature <描述>`
+> **嚴格的專案秘書模式**：由有限狀態機 (FSM) 驅動，具備遞迴驗證機制。
+> 詳細規則：`.claude/rules/common/state-machine.md`
+> 角色設定：`.claude/roles/`
 
-### Phase 0: RECEIVE（接收需求）🚦
-- **角色**：Orchestrator
-- **產出**：`docs/features/<name>/01_spec.md`（需求規格書）
-- **重點**：驗收標準(AC)、邊界條件、不做的事
-- 🚦 **等使用者確認規格**
+### 狀態轉換圖
+```
+🟢 Stage 1 需求釐清 ──(使用者確認)──→ 🟡 Stage 2 規劃與架構
+                                           │
+                                     (使用者同意)
+                                           ▼
+                                     🔵 Stage 3&4 開發與測試
+                                           │
+                                     (程式碼+測試完成)
+                                           ▼
+                                     🟣 Stage 5 審查與 QA
+                                           │
+                                     (審查+測試執行)
+                                           ▼
+                                     🔴 Stage 6 遞迴驗證
+                                          / \
+                                    ❌ FAIL  ✅ PASS → 🏁 完成
+                                       │
+                                       ▼
+                                 🟡 Stage 2（退回重新規劃）
+```
 
-### Phase 1: ARCHITECT（架構設計）🚦
-- **角色**：`architect` agent (Opus)
-- **輸入**：`01_spec.md`
-- **產出**：`02_architecture.md`
-- 🚦 **等使用者確認架構**
+### 核心規則
+1. **遞迴驗證**：失敗時退回 Stage 2（重新規劃），不只是修 bug
+2. **最多 3 輪**遞迴，超過停下來通知使用者
+3. **🚦 人工閘門**：Stage 1→2 和 Stage 2→3 必須等使用者確認
+4. **角色自動切換**：每個 Stage 自動調用對應的 `.claude/roles/` 專家
 
-### Phase 2: PLAN（開發計畫）🚦
-- **角色**：`planner` agent (Opus)
-- **輸入**：spec + architecture
-- **產出**：`03_dev_plan.md`（每個 DEV 項目對應 AC）
-- 🚦 **等使用者確認計畫**
-
-### Phase 3: DEV（開發）
-- **角色**：`tdd-guide` agent (Sonnet)
-- **動作**：寫測試 (RED) → 實作 (GREEN) → 重構 (REFACTOR)
-- **目標**：80%+ 覆蓋率
-
-### Phase 4: REVIEW（代碼審查）
-- **角色**：`python-reviewer` + `security-reviewer`（平行執行）
-- **動作**：CRITICAL / HIGH 問題必須修復
-
-### Phase 5: QA（獨立品質測試）← 新增
-- **角色**：`qa-reviewer` agent（新角色）
-- **規則**：只讀 `01_spec.md`，不讀實作程式碼
-- **產出**：`04_test_plan.md` + `05_test_report.md`
-- **判定**：PASS → Phase 6 / FAIL → 回到 Phase 3
-
-### Phase 5b: ITERATE（迴圈修復）← 新增
-- QA FAIL → DEV 修復 → REVIEW → QA 重測
-- **最多 3 輪**
-
-### Phase 6: RELEASE（發布）
-- type check + lint + 全部測試
-- git commit（Conventional Commits）+ push
-- CHANGELOG 更新
-
-### Phase 7: DOCUMENT（文件更新）
-- **角色**：`doc-updater` agent (Haiku)
-- 更新 CODEMAPS + `active_context.md`
+### 角色對應
+| Stage | 角色 | 對應命令 |
+|-------|------|---------|
+| Stage 1 | Orchestrator | — |
+| Stage 2 | architect + planner | `/plan` + architect agent |
+| Stage 3&4 | developer (TDD) | `/tdd` |
+| Stage 5 | reviewer + security | `/code-review` + `/python-review` |
+| Stage 6 ❌ | error-analyst | `/build-fix` |
+| Stage 6 ✅ | doc-updater | `/update-docs` |
 
 ### 快捷指令
-- `/orchestrate feature <描述>` — 完整流程：RECEIVE → ARCHITECT → PLAN → DEV → REVIEW → QA → RELEASE
-- `/orchestrate bugfix <描述>` — 簡化流程：RECEIVE → PLAN → DEV → REVIEW → QA → RELEASE
+- `/orchestrate feature <描述>` — 完整流程：Stage 1 → 2 → 3&4 → 5 → 6
+- `/orchestrate bugfix <描述>` — 簡化流程：Stage 1 → 2(跳過架構) → 3&4 → 5 → 6
 
 ### 文件結構
 ```
 docs/features/<name>/
-  ├── 01_spec.md          ← Phase 0
-  ├── 02_architecture.md  ← Phase 1
-  ├── 03_dev_plan.md      ← Phase 2
-  ├── 04_test_plan.md     ← Phase 5
-  └── 05_test_report.md   ← Phase 5
+  ├── 01_spec.md          ← Stage 1
+  ├── 02_architecture.md  ← Stage 2
+  ├── 03_dev_plan.md      ← Stage 2
+  ├── 04_test_plan.md     ← Stage 5
+  └── 05_test_report.md   ← Stage 5
 ```
 
 ## Common Commands

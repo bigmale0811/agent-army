@@ -17,17 +17,19 @@ Located in `~/.claude/agents/`:
 | doc-updater | Documentation | Updating docs |
 | **qa-reviewer** | **獨立品質測試（只讀 spec，不讀程式碼）** | **Phase 5 QA** |
 
-## ECC v2 流程中的角色對應
+## FSM 狀態機中的角色對應
 
-| Phase | Agent | 產出文件 |
-|-------|-------|---------|
-| Phase 0 RECEIVE | Orchestrator | `01_spec.md` |
-| Phase 1 ARCHITECT | architect | `02_architecture.md` |
-| Phase 2 PLAN | planner | `03_dev_plan.md` |
-| Phase 3 DEV | tdd-guide | 程式碼 + 單元測試 |
-| Phase 4 REVIEW | python-reviewer + security-reviewer | 審查報告 |
-| Phase 5 QA | **qa-reviewer** | `04_test_plan.md` + `05_test_report.md` |
-| Phase 7 DOCUMENT | doc-updater | CODEMAPS + 記憶 |
+> 詳細規則見 `.claude/rules/common/state-machine.md`
+> 角色設定檔在 `.claude/roles/`
+
+| FSM Stage | Agent | 角色設定檔 | 產出文件 |
+|-----------|-------|-----------|---------|
+| 🟢 Stage 1 需求釐清 | Orchestrator | — | `01_spec.md` |
+| 🟡 Stage 2 規劃與架構 | architect + planner | `roles/architect.md` + `roles/planner.md` | `02_architecture.md` + `03_dev_plan.md` |
+| 🔵 Stage 3&4 開發與測試 | tdd-guide | `roles/developer.md` | 程式碼 + 單元測試 |
+| 🟣 Stage 5 審查與 QA | python-reviewer + security-reviewer + qa-reviewer | `roles/reviewer.md` + `roles/security.md` | 審查報告 + `04_test_plan.md` + `05_test_report.md` |
+| 🔴 Stage 6 ❌ 失敗 | build-error-resolver | `roles/error-analyst.md` | 錯誤分析 → 退回 Stage 2 |
+| 🔴 Stage 6 ✅ 通過 | doc-updater | — | CODEMAPS + 記憶 |
 
 ## Immediate Agent Usage
 
