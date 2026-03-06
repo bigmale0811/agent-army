@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 """Agent Army Setup Wizard — 互動式安裝精靈入口。
 
+此檔案在 agent-army 專案內執行，負責 Step 4~8 的設定。
+前 3 步（環境檢查、GitHub CLI、下載）由 install.py 處理。
+
 使用方式：
-    python setup.py                     # 完整安裝精靈
+    python setup.py                     # 完整設定精靈 (Step 4~8)
     python setup.py --add-cloud-models  # 只設定雲端模型
     python setup.py --add-github        # 只設定 GitHub CLI
     python setup.py --add-ollama        # 只設定 Ollama
     python setup.py --add-telegram      # 只設定 Telegram Bot
     python setup.py --verify            # 只驗證安裝結果
-    python setup.py --path /path/to/project  # 指定專案路徑
+
+完整安裝流程請使用 install.py（一鍵安裝包）。
 """
 
 import argparse
@@ -25,7 +29,7 @@ def main() -> None:
     parser.add_argument(
         "--path",
         type=Path,
-        help="專案路徑（預設互動式詢問）",
+        help="專案路徑（預設為當前目錄）",
     )
     parser.add_argument(
         "--add-cloud-models",
@@ -106,10 +110,10 @@ def main() -> None:
         run_verification(context)
         return
 
-    # 完整精靈模式
+    # 完整精靈模式（Step 4~8）
     from setup.wizard import run_wizard
 
-    run_wizard(project_path=args.path)
+    run_wizard(project_path=args.path or Path.cwd())
 
 
 if __name__ == "__main__":

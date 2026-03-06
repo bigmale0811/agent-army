@@ -1,28 +1,22 @@
 """Setup Wizard 主流程控制。
 
-協調所有安裝步驟，提供統一的互動介面。
-從零開始在全新電腦建立完整 Agent Army 環境。
-只使用 Python 標準庫。
+負責 Step 4~8 的設定流程（在已有 agent-army 專案的情況下）。
+Step 1~3（環境檢查、GitHub CLI、下載）由 install.py 處理。
 
-流程：
-  Step 1: 環境檢查
-  Step 2: GitHub CLI 設定
-  Step 3: 下載 agent-army
-  Step 4: 專案初始化
-  Step 5: 雲端模型設定
-  Step 6: 本地模型 Ollama
-  Step 7: Telegram Bot 設定
-  Step 8: 驗證
+Step 4: 專案初始化 (pip install + 結構驗證)
+Step 5: 雲端模型設定
+Step 6: 本地模型 Ollama
+Step 7: Telegram Bot 設定
+Step 8: 驗證
 """
 
+import shutil
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from .checks import run_environment_checks
 from .cloud_models import setup_cloud_models
-from .download import setup_download
-from .github_cli import setup_github_cli
+from .download import install_dependencies, verify_project_structure
 from .ollama import setup_ollama
 from .telegram import setup_telegram
 from .verify import run_verification
@@ -36,7 +30,7 @@ CYAN = "\033[96m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
 
-TOTAL_STEPS = 8
+TOTAL_STEPS = 5  # Step 4~8 共 5 步
 
 
 def _enable_ansi_windows() -> None:
@@ -45,7 +39,6 @@ def _enable_ansi_windows() -> None:
         try:
             import ctypes
             kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
-            # 啟用 ENABLE_VIRTUAL_TERMINAL_PROCESSING
             kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
         except Exception:
             pass
@@ -154,11 +147,11 @@ def _is_existing_project(path: Path) -> bool:
 
 
 def run_wizard(project_path: Optional[Path] = None) -> None:
-    """執行安裝精靈主流程（8 步）。
+    """執行 Setup Wizard（Step 4~8）。
 
-    Step 1: 環境檢查
-    Step 2: GitHub CLI 設定
-    Step 3: 下載 agent-army
+    此函數在已有 agent-army 專案的目錄內執行。
+    Step 1~3 由 install.py 負責。
+
     Step 4: 專案初始化
     Step 5: 雲端模型設定
     Step 6: 本地模型 Ollama
@@ -168,53 +161,41 @@ def run_wizard(project_path: Optional[Path] = None) -> None:
     _enable_ansi_windows()
     print_banner()
 
+    # 確定專案路徑
+    if project_path is None:
+        project_path = Path.cwd()
+
+    if not _is_existing_project(project_path):
+        print_fail(f"{project_path} 不是有效的 agent-army 專案")
+        print_info("請先執行 install.py 來下載並初始化專案")
+        print_info("或確認你在正確的目錄中執行")
+        sys.exit(1)
+
+    print_ok(f"專案路徑：{project_path}")
+
     context: Dict = {
         "project_path": project_path,
-        "project_name": None,
+        "project_name": project_path.name,
         "cloud_providers": [],
         "setup_ollama": False,
         "setup_telegram": False,
         "setup_github": False,
-        "has_ollama": False,
+        "has_ollama": bool(shutil.which("ollama")),
     }
 
-    # ── Step 1: 環境檢查 ──
-    print_step(1, TOTAL_STEPS, "環境檢查")
-    env_result = run_environment_checks()
-    # 記錄 Ollama 有無（Step 6 會用到）
-    context["has_ollama"] = env_result.get("has_ollama", False)
-
-    if not env_result.get("all_ok", True):
-        print_fail("環境檢查未通過，請先安裝缺少的工具")
-        if not ask_yes_no("是否繼續？", default=False):
-            print("\n  👋 安裝中止。請安裝缺少的工具後重新執行。\n")
-            sys.exit(1)
-
-    # ── Step 2: GitHub CLI 設定 ──
-    print_step(2, TOTAL_STEPS, "GitHub CLI 設定")
-    context = setup_github_cli(context)
-
-    # ── Step 3: 下載 agent-army ──
-    print_step(3, TOTAL_STEPS, "下載 agent-army")
-    context = setup_download(context)
-
-    if not context.get("project_path"):
-        print_fail("未設定專案路徑，無法繼續")
-        sys.exit(1)
-
     # ── Step 4: 專案初始化 ──
-    print_step(4, TOTAL_STEPS, "專案初始化")
+    print_step(1, TOTAL_STEPS, "專案初始化")
     _run_initialization(context)
 
     # ── Step 5: 雲端模型設定 ──
-    print_step(5, TOTAL_STEPS, "雲端模型設定（可選）")
+    print_step(2, TOTAL_STEPS, "雲端模型設定（可選）")
     if ask_yes_no("要設定雲端模型 API 嗎？"):
         context = setup_cloud_models(context)
     else:
         print_info("略過。之後可執行 python setup.py --add-cloud-models")
 
     # ── Step 6: 本地模型 Ollama ──
-    print_step(6, TOTAL_STEPS, "本地模型 Ollama（可選）")
+    print_step(3, TOTAL_STEPS, "本地模型 Ollama（可選）")
     if context.get("has_ollama"):
         print_ok("偵測到 Ollama 已安裝")
         if ask_yes_no("要設定 Ollama 模型嗎？"):
@@ -226,14 +207,14 @@ def run_wizard(project_path: Optional[Path] = None) -> None:
         print_info("如需安裝：https://ollama.com/download")
 
     # ── Step 7: Telegram Bot 設定 ──
-    print_step(7, TOTAL_STEPS, "Telegram Bot 設定（可選）")
+    print_step(4, TOTAL_STEPS, "Telegram Bot 設定（可選）")
     if ask_yes_no("要設定 Telegram Bot 嗎？"):
         context = setup_telegram(context)
     else:
         print_info("略過。之後可執行 python setup.py --add-telegram")
 
     # ── Step 8: 驗證 ──
-    print_step(8, TOTAL_STEPS, "驗證安裝結果")
+    print_step(5, TOTAL_STEPS, "驗證安裝結果")
     run_verification(context)
 
     # 完成
@@ -241,16 +222,13 @@ def run_wizard(project_path: Optional[Path] = None) -> None:
 
 
 def _run_initialization(context: Dict) -> None:
-    """執行專案初始化（Step 4）。
+    """執行專案初始化。
 
-    確認目錄結構、hooks、rules、記憶系統都就緒。
-    如果是剛 clone 的專案，大部分已經存在，只需驗證和補齊。
+    確認依賴已安裝、結構完整、記憶系統就緒。
     """
-    from .download import install_dependencies, verify_project_structure
-
     project_path = Path(context["project_path"])
 
-    # 4.1 安裝依賴
+    # 安裝依賴
     print_info("檢查 Python 依賴...")
     if (project_path / "requirements.txt").exists():
         if install_dependencies(project_path):
@@ -258,22 +236,20 @@ def _run_initialization(context: Dict) -> None:
         else:
             print_warn("依賴安裝失敗，稍後可手動執行 pip install -r requirements.txt")
     else:
-        print_info("未找到 requirements.txt，跳過依賴安裝")
+        print_info("未找到 requirements.txt，跳過")
 
-    # 4.2-4.5 驗證專案結構
+    # 驗證結構
     missing = verify_project_structure(project_path)
     if not missing:
         print_ok("專案結構完整")
     else:
         print_warn(f"缺少 {len(missing)} 個項目：{', '.join(missing)}")
-        print_info("這些項目會在驗證步驟中詳細列出")
 
-    # 4.6 初始化記憶系統（如果不存在）
+    # 記憶系統
     _ensure_memory_system(project_path)
 
-    # 4.7 確認 .env 存在
-    env_path = project_path / ".env"
-    if env_path.exists():
+    # .env
+    if (project_path / ".env").exists():
         print_ok(".env 已存在")
     else:
         print_info(".env 尚未建立（雲端模型設定步驟會自動建立）")
