@@ -67,49 +67,71 @@ Claude Code Opus 4.6 as orchestrator, with subagents and local Ollama.
 - `common/`: development-workflow, testing, security, coding-style, git-workflow, agents, hooks, patterns, performance
 - `python/`: coding-style, testing, security, patterns, hooks
 
-## ECC Standard Workflow（標準開發流程，每個項目必須遵守）
+## ECC v2 Standard Workflow（標準開發流程，最高優先級）
 
-每個開發項目啟動前，必須先告知使用者將使用哪些 ECC 模組。
+文件驅動、角色分離、有迴圈的完整開發流程。
+🚦 = 必須等使用者確認才能繼續。
+完整指令：`/orchestrate feature <描述>`
 
-### Phase 0: RESEARCH（研究）
-- **模組**：`search-first` skill + WebSearch
-- **動作**：搜尋 PyPI/GitHub 有沒有現成方案
-- **規則**：先搜尋再寫（`common/patterns.md`）
+### Phase 0: RECEIVE（接收需求）🚦
+- **角色**：Orchestrator
+- **產出**：`docs/features/<name>/01_spec.md`（需求規格書）
+- **重點**：驗收標準(AC)、邊界條件、不做的事
+- 🚦 **等使用者確認規格**
 
-### Phase 1: PLAN（規劃）
-- **模組**：`/plan` → `planner` agent (Opus)
-- **動作**：拆解需求、識別風險、建立步驟
-- **⚠️ 等使用者確認才動手寫程式碼**
+### Phase 1: ARCHITECT（架構設計）🚦
+- **角色**：`architect` agent (Opus)
+- **輸入**：`01_spec.md`
+- **產出**：`02_architecture.md`
+- 🚦 **等使用者確認架構**
 
-### Phase 2: TDD（測試驅動開發）
-- **模組**：`/tdd` → `tdd-guide` agent (Sonnet)
-- **Skills**：`python-testing`, `tdd-workflow`
-- **動作**：先寫測試(RED) → 寫程式(GREEN) → 重構(REFACTOR)
+### Phase 2: PLAN（開發計畫）🚦
+- **角色**：`planner` agent (Opus)
+- **輸入**：spec + architecture
+- **產出**：`03_dev_plan.md`（每個 DEV 項目對應 AC）
+- 🚦 **等使用者確認計畫**
+
+### Phase 3: DEV（開發）
+- **角色**：`tdd-guide` agent (Sonnet)
+- **動作**：寫測試 (RED) → 實作 (GREEN) → 重構 (REFACTOR)
 - **目標**：80%+ 覆蓋率
 
-### Phase 3: REVIEW（程式碼審查）
-- **模組**：`/python-review` → `python-reviewer` agent (Sonnet)
-- **模組**：`security-reviewer` agent（如涉及安全/API/使用者輸入）
-- **Skills**：`python-patterns`, `security-review`
+### Phase 4: REVIEW（代碼審查）
+- **角色**：`python-reviewer` + `security-reviewer`（平行執行）
+- **動作**：CRITICAL / HIGH 問題必須修復
 
-### Phase 4: VERIFY（驗證）
-- **模組**：`/verify`
-- **動作**：type check → lint → test suite → git status
-- **全部通過才能進入下一步**
+### Phase 5: QA（獨立品質測試）← 新增
+- **角色**：`qa-reviewer` agent（新角色）
+- **規則**：只讀 `01_spec.md`，不讀實作程式碼
+- **產出**：`04_test_plan.md` + `05_test_report.md`
+- **判定**：PASS → Phase 6 / FAIL → 回到 Phase 3
 
-### Phase 5: COMMIT（提交）
-- **規則**：`common/git-workflow.md`（Conventional Commits）
-- **動作**：`/checkpoint` 建立安全回滾點 → commit
+### Phase 5b: ITERATE（迴圈修復）← 新增
+- QA FAIL → DEV 修復 → REVIEW → QA 重測
+- **最多 3 輪**
 
-### Phase 6: DOCUMENT（文件更新）
-- **模組**：`/changelog` + `/update-codemaps`
-- **Agent**：`doc-updater` (Haiku)
+### Phase 6: RELEASE（發布）
+- type check + lint + 全部測試
+- git commit（Conventional Commits）+ push
+- CHANGELOG 更新
 
-### Phase 7: MEMORY（記憶保存）
-- **動作**：更新 `active_context.md`、歸檔 session
+### Phase 7: DOCUMENT（文件更新）
+- **角色**：`doc-updater` agent (Haiku)
+- 更新 CODEMAPS + `active_context.md`
 
 ### 快捷指令
-- `/orchestrate feature <描述>` — 自動串接：planner → tdd-guide → code-reviewer → security-reviewer
+- `/orchestrate feature <描述>` — 完整流程：RECEIVE → ARCHITECT → PLAN → DEV → REVIEW → QA → RELEASE
+- `/orchestrate bugfix <描述>` — 簡化流程：RECEIVE → PLAN → DEV → REVIEW → QA → RELEASE
+
+### 文件結構
+```
+docs/features/<name>/
+  ├── 01_spec.md          ← Phase 0
+  ├── 02_architecture.md  ← Phase 1
+  ├── 03_dev_plan.md      ← Phase 2
+  ├── 04_test_plan.md     ← Phase 5
+  └── 05_test_report.md   ← Phase 5
+```
 
 ## Common Commands
 - python -m pytest tests/

@@ -15,6 +15,19 @@ Located in `~/.claude/agents/`:
 | e2e-runner | E2E testing | Critical user flows |
 | refactor-cleaner | Dead code cleanup | Code maintenance |
 | doc-updater | Documentation | Updating docs |
+| **qa-reviewer** | **獨立品質測試（只讀 spec，不讀程式碼）** | **Phase 5 QA** |
+
+## ECC v2 流程中的角色對應
+
+| Phase | Agent | 產出文件 |
+|-------|-------|---------|
+| Phase 0 RECEIVE | Orchestrator | `01_spec.md` |
+| Phase 1 ARCHITECT | architect | `02_architecture.md` |
+| Phase 2 PLAN | planner | `03_dev_plan.md` |
+| Phase 3 DEV | tdd-guide | 程式碼 + 單元測試 |
+| Phase 4 REVIEW | python-reviewer + security-reviewer | 審查報告 |
+| Phase 5 QA | **qa-reviewer** | `04_test_plan.md` + `05_test_report.md` |
+| Phase 7 DOCUMENT | doc-updater | CODEMAPS + 記憶 |
 
 ## Immediate Agent Usage
 
