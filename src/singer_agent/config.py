@@ -71,7 +71,19 @@ def _parse_user_ids(raw: str) -> list[int]:
     """
     if not raw.strip():
         return []
-    return [int(uid.strip()) for uid in raw.split(",") if uid.strip()]
+    ids: list[int] = []
+    for uid in raw.split(","):
+        uid = uid.strip()
+        if not uid:
+            continue
+        # 驗證每個 ID 是否為合法整數，提供清楚的錯誤訊息
+        if not uid.lstrip("-").isdigit():
+            raise ValueError(
+                f"ALLOWED_USER_IDS 包含無效的 ID：'{uid}'。"
+                "請確認為純整數，以逗號分隔。"
+            )
+        ids.append(int(uid))
+    return ids
 
 
 # 允許使用 Telegram Bot 的使用者 ID 列表
