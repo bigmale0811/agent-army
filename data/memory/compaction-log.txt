@@ -3,3 +3,6 @@
 [2026-03-05 08:22:00] ✅ Hook verification test #2 (after settings.json fix)
 [2026-03-05 09:36:39] ⚡ Auto-compaction triggered
 [2026-03-06 04:15:23] ⚡ Auto-compaction triggered
+[2026-03-06 08:35:58] ⚡ Auto-compaction triggered
+[2026-03-06 09:51:55] ⚡ Auto-compaction triggered
+[2026-03-06 16:37:00] ⚡ Auto-compaction triggered
