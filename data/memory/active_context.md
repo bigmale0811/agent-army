@@ -1,57 +1,72 @@
 # 🧠 Active Context
-更新：2026-03-06
+更新：2026-03-07 19:46
 
 ## 目前進行中
-- **Stock Analyzer 整體進度**：DEV-A 完成、WO-001 Bug 修復完成，DEV-B 待執行
-  - 基底：TradingAgents v0.2.0（Apache 2.0）
-  - LLM：Ollama QWen3 14B 本地端
-  - 標的：台股+基金+BTC（主力）、美股+黃金（參考）
-  - 首次 AAPL 分析已跑完（446 秒），驗證了端到端流程
-  - 獨立執行腳本：`scripts/run_analysis.py`（PID lock + 狀態追蹤）
-  - AAPL 修復後驗證分析已於背景啟動（2026-03-06）
-- Singer Agent ECC v2 重建：批次 A 已完成
+- **SadTalker 掛起修復**：改用 Popen + 輪詢策略
+  - 根因：SadTalker process 產出 mp4 後卡在 cleanup（os.system ffmpeg / seamlessClone / shutil.rmtree）
+  - 修復：video_renderer.py 改用 Popen + _poll_for_mp4 偵測產出 + _terminate_process 強制結束
+  - 新增 `--verbose` flag 跳過 shutil.rmtree
+  - 測試：18/18 通過（從 9 個增加到 18 個）
+  - Singer Bot 已重啟，等待使用者透過 Telegram 發送 MP3 進行實測
+- **Singer Agent 全部 14 個 DEV 項目已完成** 🎉
+  - DEV-1 ~ DEV-14 全部完成、測試通過、Code Review 修復完畢
+  - 283 測試，94% 覆蓋率
+  - 5 個 commits：Batch A → B → C → D → E
+
+## Singer Agent 完成摘要
+
+| 批次 | DEV 項目 | Commit | 測試數 |
+|------|---------|--------|-------|
+| Batch A | DEV-1 models, DEV-2 config | `cd6096c` | 116 |
+| Batch B | DEV-3 path_utils, DEV-4 ollama, DEV-5 project_store | `49e12cf` | 156 |
+| Batch C | DEV-6 researcher, DEV-7 copywriter, DEV-8 background_gen, DEV-9 compositor, DEV-10 precheck, DEV-11 video_renderer | `b278f44` | 240 |
+| Batch D | DEV-12 pipeline | `ba3149c` | 251 |
+| Batch E | DEV-13 cli + __main__, DEV-14 bot | `843386b` | 283 |
+
+### Code Review 修復歷史
+- Batch B: 路徑穿越防護、完整例外處理、logging
+- Batch E: 路徑穿越(bot)、config 驗證、coroutine 修復、錯誤洩漏、副檔名白名單
+
+## 待處理（Stock Analyzer，未 commit）
+1. `scripts/run_analysis.py` — Telegram 通知 + PDF 生成 + log 修復
+2. `src/stock_analyzer/utils/pdf_report.py` — PDF 報告生成器（新增）
+3. vendor prompts 中文化（6 個檔案）
+4. trader prompt 結構化輸出（跨週金股風格）
+5. ⚠️ 結構化格式需重跑分析才生效
 
 ## 最近完成
-- **✅ WO-001 Stock Analyzer Bug 修復**（完整 Kanban 流程）：
-  - BUG-1 ✅：`market_research_report` → `market_report` key 修正
-  - BUG-2 ✅：新增 `clean_thinking_tags()` 清除 QWen3 think 標籤（含 Optional[str] 型別、\r\n 支援、propagate 錯誤處理）
-  - BUG-3 ⏳：報告中文化，留待 DEV-C1
-  - 15 項測試全部 PASS（12 clean_thinking_tags + 3 regression）
-  - 2 輪 Code Review：0 CRITICAL、0 HIGH、3 MEDIUM 已修復
-  - 派工單 WO-001 已關閉 [DONE]
-- **✅ Git 整理**：7 個 commits（FSM、Stock Analyzer、Bug Fix、Singer Agent、Memory、Gitignore）
-- **✅ FSM 狀態機工作流整合**
-- **✅ Kanban 派工系統建立**
-- **✅ Singer Agent 批次 A TDD 完成**（96 項測試，98% 覆蓋率）
-- **✅ ECC v2 流程引擎建立**
-
-## 重要決策
-- **FSM 狀態機工作流**：6 Stage FSM 遞迴流程，失敗退回 Stage 2
-- **Kanban 派工系統**：`.claude/work_orders/` 驅動異步開發
-- ECC 標準流程必須嚴格遵守
-- CLI 互動工具必須支援 --dry-run + --auto
-
-## 下一步
-1. **Stock Analyzer DEV-B**：台股（2330.TW）、BTC、黃金分析測試
-2. **Stock Analyzer DEV-C**：中文化（prompt 層 + 報告輸出）
-3. **Stock Analyzer DEV-D**：Pydantic schema 驗證、安全強化
-4. Singer Agent v0.3 端對端測試
-5. v0.3.1：服裝修改功能
-
-## 專案現有素材
-- MP3：`data/singer_agent/inbox/愛我的人和我愛的人_ζั͡ޓ擂戰އ沒人_2026_02_03_15_06_32.mp3`
-- 角色圖片：`data/singer_agent/character/avatar.png`
-- ComfyUI：`D:\Projects\ComfyUI`（SDXL base 1.0, PyTorch cu128）
-
-## 使用者操作環境
-- 透過 `D:\Projects\claude-code-telegram` 的 Telegram Bot 互動
-- Bot 用 `claude-agent-sdk`，`cwd=D:\Projects\agent-army`
-- Git repo：`https://github.com/bigmale0811/agent-army.git`
-
-## Kanban 派工系統
-- 模板：`.claude/work_orders/_template.md`
-- 規則：`.claude/rules/common/kanban-orchestrator.md`
-- 已完成工單：`WO-001-stock-analyzer-bugfix.md` [DONE]
+- ✅ Singer Agent 全部 14 DEV 項目（283 測試，94% 覆蓋率）
+- ✅ Telegram Bot 整合 + PDF 報告 + 中文化 prompt
+- ✅ run_analysis.py Bug 修復 + Code Review
+- ✅ WO-001 Stock Analyzer Bug 修復
+- ✅ FSM 狀態機 + Kanban 派工系統
 
 ## Git 狀態
-- master 領先 origin/master 7 個 commits（未 push）
+- master 領先 origin/master 多個 commits（未 push）
+- Stock Analyzer 相關檔案仍有未提交修改（run_analysis.py, pdf_report.py）
+
+## 🖥️ 硬體火力與絕對限制
+- **顯示卡**：GFX 5070 12GB VRAM
+- **系統記憶體**：64GB RAM
+- **⚠️ 最高指導原則**：任何涉及影像生成或 SadTalker 的任務，必須嚴格控管在 12GB VRAM 內，嚴防 OOM
+- **模型武器庫**：
+  - 雲端：Claude Opus 4.6 / Sonnet 4.5 / Haiku 4.5
+  - 本地：Ollama + Qwen3 14B (localhost:11434)
+
+## ⚡ 最近壓縮事件
+- [2026-03-07 19:39:13] Context 被自動壓縮，以上內容是壓縮前的狀態
+- **請重新讀取此檔案確認進度**
+
+## 🔄 2026-03-08 ECC 熱更新
+- ✅ 硬體火力寫入 active_context.md（GFX 5070 12GB / 64GB RAM）
+- ✅ 動態 HR 招募模組寫入 CLAUDE.md
+- ✅ 智囊團辯論協議寫入 CLAUDE.md
+- ✅ HR 招募：generative-video-specialist.md + multimedia-pipeline-engineer.md
+- ✅ 智囊團辯論完成（Qwen3 提案 → Sonnet 攻擊 → Opus 裁決）
+- ✅ 派工單產出：WO-20260308-Singer-VRAM-Optimization.md（4 個 DEV 項目）
+- ✅ VRAM 優化開發完成！4 個 DEV 全部通過（323 測試，88% 覆蓋率）
+  - DEV-1: background_gen.py → POST /free 卸載 SDXL
+  - DEV-2: compositor.py → rembg 後 gc + empty_cache
+  - DEV-3: vram_monitor.py（新模組）+ pipeline.py 監控
+  - DEV-4: video_renderer.py → _pre_launch_cleanup
+- ⏳ 待 CEO 確認是否 commit + push

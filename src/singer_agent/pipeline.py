@@ -31,6 +31,7 @@ from src.singer_agent.compositor import Compositor
 from src.singer_agent.precheck import QualityPrecheck
 from src.singer_agent.video_renderer import VideoRenderer
 from src.singer_agent.project_store import ProjectStore
+from src.singer_agent.vram_monitor import log_vram, check_vram_safety
 
 _logger = logging.getLogger(__name__)
 
@@ -132,7 +133,8 @@ class Pipeline:
             copy_spec = copywriter.write(song_spec, dry_run=self.dry_run)
             state.copy_spec = copy_spec
 
-            # Step 4: 背景生成
+            # Step 4: 背景生成（GPU 密集：ComfyUI SDXL ~7-8GB VRAM）
+            log_vram("Step 4 開始前")
             self._notify(4, "生成背景圖")
             bg_path = config.BACKGROUNDS_DIR / f"{project_id}.png"
             bg_gen = BackgroundGenerator()
@@ -140,19 +142,24 @@ class Pipeline:
                 research.background_prompt, bg_path, dry_run=self.dry_run,
             )
             state.background_image = str(bg_path)
+            # generate() 內部已呼叫 POST /free 卸載 SDXL
+            log_vram("Step 4 完成後（ComfyUI 已卸載）")
 
-            # Step 5: 去背 + 合成
+            # Step 5: 去背 + 合成（GPU 密集：rembg U²-Net ~170MB）
+            log_vram("Step 5 開始前")
             self._notify(5, "角色去背與合成")
             comp = Compositor()
             nobg_path = config.COMPOSITES_DIR / f"{project_id}_nobg.png"
             comp.remove_background(
                 self.character_image, nobg_path, dry_run=self.dry_run,
             )
+            # remove_background() 內部已呼叫 force_cleanup()
             composite_path = config.COMPOSITES_DIR / f"{project_id}.png"
             comp.composite(
                 bg_path, nobg_path, composite_path, dry_run=self.dry_run,
             )
             state.composite_image = str(composite_path)
+            log_vram("Step 5 完成後")
 
             # Step 6: 品質預檢
             self._notify(6, "品質預檢")
@@ -170,7 +177,10 @@ class Pipeline:
                 )
                 return state
 
-            # Step 7: 影片渲染
+            # Step 7: 影片渲染（GPU 密集：SadTalker ~4-5GB VRAM）
+            # _render_sadtalker() 內部已有 _pre_launch_cleanup()
+            log_vram("Step 7 開始前")
+            check_vram_safety("Step 7 SadTalker 啟動前")
             self._notify(7, "影片渲染")
             video_path = config.VIDEOS_DIR / f"{project_id}.mp4"
             renderer = VideoRenderer()
@@ -180,14 +190,15 @@ class Pipeline:
             )
             state.final_video = str(video_path)
             state.render_mode = render_mode
+            log_vram("Step 7 完成後（SadTalker subprocess 已結束）")
 
             # Step 8: 儲存專案
             self._notify(8, "儲存專案狀態")
-            store = ProjectStore()
-            store.save(state)
-
             state.status = "completed"
             state.completed_at = datetime.now().isoformat()
+
+            store = ProjectStore()
+            store.save(state)
             _logger.info("管線完成：%s", project_id)
 
         except Exception as exc:

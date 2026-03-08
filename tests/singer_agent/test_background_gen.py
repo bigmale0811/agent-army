@@ -135,3 +135,68 @@ class TestGenerateComfyUI:
 
         opened = Image.open(out)
         assert opened.size[0] > 0
+
+
+class TestGenerateVramCleanup:
+    """DEV-1: ComfyUI 生成後呼叫 POST /free 卸載模型。"""
+
+    def test_free_models_called_after_success(self, tmp_path):
+        """ComfyUI 成功後呼叫 _free_models。"""
+        from src.singer_agent.background_gen import BackgroundGenerator
+        from PIL import Image
+        import io
+
+        img = Image.new("RGB", (1920, 1080), (100, 150, 200))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+
+        bg = BackgroundGenerator(comfyui_url="http://localhost:8188")
+        out = tmp_path / "bg.png"
+
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = buf.getvalue()
+        mock_resp.status = 200
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+
+        with patch("src.singer_agent.background_gen.urllib.request.urlopen",
+                    return_value=mock_resp), \
+             patch.object(bg, "_free_models") as mock_free:
+            bg.generate("test", out)
+            mock_free.assert_called_once()
+
+    def test_free_models_called_after_failure(self, tmp_path):
+        """ComfyUI 失敗後也呼叫 _free_models（模型可能已載入）。"""
+        from src.singer_agent.background_gen import BackgroundGenerator
+
+        bg = BackgroundGenerator(comfyui_url="http://unreachable:9999")
+        out = tmp_path / "bg.png"
+
+        with patch("src.singer_agent.background_gen.urllib.request.urlopen",
+                    side_effect=Exception("connection refused")), \
+             patch.object(bg, "_free_models") as mock_free:
+            bg.generate("test", out)
+            mock_free.assert_called_once()
+
+    def test_free_models_not_called_in_dry_run(self, tmp_path):
+        """dry_run 不呼叫 _free_models。"""
+        from src.singer_agent.background_gen import BackgroundGenerator
+
+        bg = BackgroundGenerator()
+        out = tmp_path / "bg.png"
+
+        with patch.object(bg, "_free_models") as mock_free:
+            bg.generate("test", out, dry_run=True)
+            mock_free.assert_not_called()
+
+    def test_free_models_calls_vram_monitor(self):
+        """_free_models 透過 vram_monitor.free_comfyui_models 執行。"""
+        from src.singer_agent.background_gen import BackgroundGenerator
+
+        bg = BackgroundGenerator(comfyui_url="http://localhost:8188")
+
+        with patch(
+            "src.singer_agent.vram_monitor.free_comfyui_models"
+        ) as mock_free:
+            bg._free_models()
+            mock_free.assert_called_once_with("http://localhost:8188")

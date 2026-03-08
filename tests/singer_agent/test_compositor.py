@@ -149,3 +149,44 @@ class TestCompositeNormal:
         bottom_y = 1080 - 1
         pixel = img.getpixel((center_x, bottom_y))
         assert pixel[0] == 255  # 紅色通道
+
+
+class TestRemoveBackgroundVramCleanup:
+    """DEV-2: rembg 去背後釋放 VRAM。"""
+
+    def test_cleanup_vram_called_after_rembg(self, tmp_path):
+        """rembg 去背後呼叫 _cleanup_vram。"""
+        from src.singer_agent.compositor import Compositor
+
+        src = _create_test_image(tmp_path / "char.png")
+        out = tmp_path / "char_nobg.png"
+
+        mock_result = Image.new("RGBA", (200, 300), (255, 0, 0, 128))
+        with patch("src.singer_agent.compositor.rembg_remove",
+                    return_value=mock_result), \
+             patch.object(Compositor, "_cleanup_vram") as mock_cleanup:
+            c = Compositor()
+            c.remove_background(src, out)
+            mock_cleanup.assert_called_once()
+
+    def test_cleanup_not_called_in_dry_run(self, tmp_path):
+        """dry_run 不呼叫 _cleanup_vram。"""
+        from src.singer_agent.compositor import Compositor
+
+        src = _create_test_image(tmp_path / "char.png")
+        out = tmp_path / "char_nobg.png"
+
+        with patch.object(Compositor, "_cleanup_vram") as mock_cleanup:
+            c = Compositor()
+            c.remove_background(src, out, dry_run=True)
+            mock_cleanup.assert_not_called()
+
+    def test_cleanup_calls_force_cleanup(self):
+        """_cleanup_vram 透過 vram_monitor.force_cleanup 執行。"""
+        from src.singer_agent.compositor import Compositor
+
+        with patch(
+            "src.singer_agent.vram_monitor.force_cleanup"
+        ) as mock_force:
+            Compositor._cleanup_vram()
+            mock_force.assert_called_once()

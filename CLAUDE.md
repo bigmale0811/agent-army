@@ -125,6 +125,47 @@ docs/features/<name>/
   └── 05_test_report.md   ← Stage 5
 ```
 
+## Hardware Specs（硬體絕對限制）
+- **顯示卡**：GFX 5070 12GB VRAM
+- **系統記憶體**：64GB RAM
+- **⚠️ VRAM 紅線**：任何影像生成 / SadTalker / 生圖模型任務，必須控管在 12GB VRAM 內，嚴防 OOM
+
+## Dynamic HR Recruitment（動態 HR 招募模組）
+
+當現有 5 個核心角色（architect / planner / developer / reviewer / error-analyst）**缺乏特定領域知識**時，必須自動觸發 HR 招募：
+
+1. **偵測缺口**：在 Stage 2（規劃）或 Stage 3（開發）發現需要專業知識但現有角色無法勝任
+2. **自動招募**：在 `.claude/roles/` 建立新的 Markdown 專家設定檔
+3. **設定檔內容**：
+   - 角色名稱與專長領域
+   - 專屬 System Prompt（定義該專家的思考方式與審查標準）
+   - 觸發條件（何時自動調用此專家）
+   - 與 FSM Stage 的對應關係
+4. **招募紀錄**：每次招募必須記錄到 `data/memory/decisions.md`
+
+## Heterogeneous Swarm Debate（異質多模型智囊團辯論）
+
+遇到**重大架構決策**或**效能瓶頸**（如 12G VRAM 極限優化）時，啟動三方辯論：
+
+### 辯論分工
+| 角色 | 模型 | 職責 |
+|------|------|------|
+| 💡 提案者 | Ollama Qwen3 14B | 快速發散，產出多個候選方案 |
+| 🛡️ 精算師 | Claude Sonnet | 無情攻擊邏輯漏洞、記憶體風險、效能瓶頸 |
+| ⚖️ 架構師 | Claude Opus | 統整裁決，產出最終決策與 Kanban Work Order |
+
+### 辯論流程
+1. **提案階段**：Ollama 產出 2-3 個候選方案（含 VRAM 估算）
+2. **攻擊階段**：Sonnet 逐一挑戰每個方案的弱點
+3. **裁決階段**：Opus 綜合評估，選出最佳方案，產出 Work Order
+4. **記錄**：辯論摘要寫入 `data/memory/decisions.md`，Work Order 寫入 `.claude/work_orders/`
+
+### 觸發條件
+- VRAM 使用超過 10GB 的任務規劃
+- 多模型並行推理的資源分配
+- 架構級重構（影響 3+ 模組）
+- CEO 手動指派
+
 ## Common Commands
 - python -m pytest tests/
 - python -m pytest tests/ --cov=src/

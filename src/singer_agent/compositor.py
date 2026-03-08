@@ -60,8 +60,20 @@ class Compositor:
         if result.mode != "RGBA":
             result = result.convert("RGBA")
         result.save(output_path, format="PNG")
-        _logger.info("去背完成：%s", output_path)
+
+        # 釋放 rembg 模型佔用的 VRAM（U²-Net ~170MB）
+        del input_img
+        del result
+        self._cleanup_vram()
+
+        _logger.info("去背完成（已釋放 VRAM）：%s", output_path)
         return output_path
+
+    @staticmethod
+    def _cleanup_vram() -> None:
+        """釋放 rembg 模型佔用的 GPU 記憶體。"""
+        from src.singer_agent.vram_monitor import force_cleanup
+        force_cleanup()
 
     def composite(
         self,
