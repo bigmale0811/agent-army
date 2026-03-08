@@ -15,6 +15,7 @@ Pipeline 將 8 個步驟串接為完整的 MV 產出流程：
 支援 dry_run、progress_callback、例外捕獲不閃退。
 """
 import logging
+import traceback
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -270,12 +271,24 @@ class Pipeline:
             _logger.info("管線完成：%s", project_id)
 
         except Exception as exc:
+            # 取得完整 traceback（含檔案名 + 行號）
+            tb_text = traceback.format_exc()
             _logger.error(
-                "管線失敗（Step %d 中斷, %s）：%s",
-                current_step, type(exc).__name__, exc,
+                "管線失敗（Step %d 中斷, %s）：%s\n%s",
+                current_step, type(exc).__name__, exc, tb_text,
             )
+            # 從 traceback 擷取最後一行呼叫位置（最精準的錯誤定位）
+            tb_lines = tb_text.strip().split("\n")
+            # 取倒數第 3 行（通常是 File "xxx", line N）
+            location = ""
+            for line in reversed(tb_lines):
+                if "File " in line and ", line " in line:
+                    location = line.strip()
+                    break
             state.status = "failed"
             state.error_message = (
+                f"[Step {current_step}/10] {type(exc).__name__}: {exc}"
+                f"\n📍 {location}" if location else
                 f"[Step {current_step}/10] {type(exc).__name__}: {exc}"
             )
 

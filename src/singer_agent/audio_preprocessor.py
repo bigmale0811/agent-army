@@ -205,7 +205,7 @@ def separate_vocals(
         return audio_path
 
     if result.returncode != 0:
-        _logger.error("Demucs 失敗（exit=%d）：%s", result.returncode, result.stderr[:500])
+        _logger.error("Demucs 失敗（exit=%d）：%s", result.returncode, (result.stderr or "")[:500])
         _logger.warning("fallback 使用原始音訊")
         return audio_path
 
@@ -291,7 +291,7 @@ def apply_noise_gate(
         return vocals_path
 
     if result.returncode != 0:
-        _logger.error("噪音閘門失敗（exit=%d）：%s", result.returncode, result.stderr[:500])
+        _logger.error("噪音閘門失敗（exit=%d）：%s", result.returncode, (result.stderr or "")[:500])
         _logger.warning("fallback 使用原始音訊")
         return vocals_path
 
