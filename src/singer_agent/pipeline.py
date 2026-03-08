@@ -218,13 +218,18 @@ class Pipeline:
             current_step = 8
             # 使用人聲軌道（非原始混音）+ 情緒 exp_type
             # _render_edtalk() 內部已有 _pre_launch_cleanup()
+            #
+            # ⚠️ 重要：EDTalk 需要「臉部肖像」作為 source_path，
+            #    不是合成後的全場景圖（1920×1080）！
+            #    必須餵入 character_image（原始 avatar），
+            #    否則臉部偵測失敗 → 表情扭曲 + 嘴型不動。
             log_vram("Step 8 開始前")
             check_vram_safety("Step 8 EDTalk 啟動前")
             self._notify(8, "影片渲染（EDTalk）")
             video_path = config.VIDEOS_DIR / f"{project_id}.mp4"
             renderer = VideoRenderer()
             _, render_mode = renderer.render(
-                composite_path, vocals_for_edtalk,
+                self.character_image, vocals_for_edtalk,
                 video_path, dry_run=self.dry_run,
                 exp_type=exp_type,
             )
