@@ -32,8 +32,13 @@ VIDEOS_DIR = DATA_DIR / "videos"            # 產出 MV 目錄
 SPECS_DIR = DATA_DIR / "specs"              # SongSpec JSON 目錄
 PROJECTS_DIR = DATA_DIR / "projects"        # ProjectState JSON 目錄
 
-# 角色圖片路徑（固定檔名）
-CHARACTER_IMAGE = CHARACTER_DIR / "avatar.png"
+# 角色圖片路徑（從環境變數或預設路徑讀取）
+# EDTalk 需要真人臉部正方形特寫（256×256 最佳）
+# 3D 卡通/Q 版角色會導致臉部扭曲
+CHARACTER_IMAGE = Path(
+    os.environ.get("CHARACTER_IMAGE",
+                   str(CHARACTER_DIR / "avatar.png"))
+)
 
 
 # ─────────────────────────────────────────────────
