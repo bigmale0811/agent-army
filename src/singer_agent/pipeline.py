@@ -235,30 +235,38 @@ class Pipeline:
             # Step 9: QA 品質檢驗（嘴唇同步分析）
             current_step = 9
             # 使用 MediaPipe Face Mesh（CPU only，0 VRAM）
+            # QA 為非關鍵步驟：失敗時跳過，不阻擋 MV 輸出
             self._notify(9, "品質檢驗（嘴唇同步）")
-            qa = QualityChecker()
-            qa_result = qa.check(
-                video_path, vocals_path, dry_run=self.dry_run,
-            )
-            state.metadata["qa_result"] = {
-                "passed": qa_result.passed,
-                "lip_sync_score": qa_result.lip_sync_score,
-                "silent_motion_ratio": qa_result.silent_motion_ratio,
-                "total_frames": qa_result.total_frames,
-                "silent_frames": qa_result.silent_frames,
-            }
-            if not qa_result.passed:
+            try:
+                qa = QualityChecker()
+                qa_result = qa.check(
+                    video_path, vocals_path, dry_run=self.dry_run,
+                )
+                state.metadata["qa_result"] = {
+                    "passed": qa_result.passed,
+                    "lip_sync_score": qa_result.lip_sync_score,
+                    "silent_motion_ratio": qa_result.silent_motion_ratio,
+                    "total_frames": qa_result.total_frames,
+                    "silent_frames": qa_result.silent_frames,
+                }
+                if not qa_result.passed:
+                    _logger.warning(
+                        "QA 品質檢驗未通過：lip_sync=%.1f, "
+                        "靜音段運動比率=%.1f%%",
+                        qa_result.lip_sync_score,
+                        qa_result.silent_motion_ratio * 100,
+                    )
+                    state.metadata["qa_warning"] = (
+                        f"靜音段嘴唇運動比率 "
+                        f"{qa_result.silent_motion_ratio:.1%} "
+                        f"超過閾值，lip_sync_score="
+                        f"{qa_result.lip_sync_score:.1f}"
+                    )
+            except Exception as qa_exc:
                 _logger.warning(
-                    "QA 品質檢驗未通過：lip_sync=%.1f, "
-                    "靜音段運動比率=%.1f%%",
-                    qa_result.lip_sync_score,
-                    qa_result.silent_motion_ratio * 100,
+                    "QA 品質檢驗跳過（非致命）：%s", qa_exc,
                 )
-                # QA 未通過仍輸出影片（附帶警告），不阻擋管線
-                state.metadata["qa_warning"] = (
-                    f"靜音段嘴唇運動比率 {qa_result.silent_motion_ratio:.1%} "
-                    f"超過閾值，lip_sync_score={qa_result.lip_sync_score:.1f}"
-                )
+                state.metadata["qa_skipped"] = str(qa_exc)
 
             # Step 10: 儲存專案
             current_step = 10
