@@ -1,9 +1,10 @@
 """
-音訊前處理模組：使用 Demucs 進行人聲分離。
+音訊前處理模組：使用 Demucs 進行人聲分離 + EDTalk 情緒映射。
 
-解決問題：SadTalker 在間奏/呼吸段嘴巴亂動。
-方案：提取純人聲軌道，非人聲段自然為靜音 → SadTalker 不會驅動嘴唇。
-VRAM：3-4GB（隔離 subprocess，結束後自動釋放）。
+解決問題：
+1. 間奏/呼吸段嘴巴亂動 → Demucs 提取純人聲 + noise gate
+2. 情緒標籤精準映射 → mood_hint → EDTalk --exp_type
+VRAM：3-4GB（Demucs 隔離 subprocess，結束後自動釋放）。
 """
 
 import logging
@@ -14,67 +15,136 @@ from src.singer_agent import config
 
 _logger = logging.getLogger(__name__)
 
-# 情緒 → expression_scale 映射表
-# expression_scale 控制 SadTalker 3DMM 表情幅度
-EMOTION_EXPRESSION_MAP: dict[str, float] = {
-    # 英文關鍵字
-    "sad": 0.5,
-    "melancholic": 0.5,
-    "sorrowful": 0.4,
-    "depressed": 0.4,
-    "nostalgic": 0.6,
-    "gentle": 0.7,
-    "neutral": 1.0,
-    "calm": 0.8,
-    "happy": 1.3,
-    "excited": 1.5,
-    "energetic": 1.4,
-    "angry": 1.2,
-    "passionate": 1.3,
-    # 繁體中文關鍵字
-    "感傷": 0.5,
-    "悲傷": 0.4,
-    "低落": 0.4,
-    "憂鬱": 0.4,
-    "懷舊": 0.6,
-    "溫柔": 0.7,
-    "平靜": 0.8,
-    "開心": 1.3,
-    "興奮": 1.5,
-    "熱情": 1.3,
-    "憤怒": 1.2,
-    "情緒低落": 0.4,
+# ─────────────────────────────────────────────────
+# V2.0 EDTalk 情緒映射表
+# 中英文關鍵字 → EDTalk --exp_type 字串
+# EDTalk 支援 8 種情緒：angry, contempt, disgusted, fear,
+#                        happy, sad, surprised, neutral
+# ─────────────────────────────────────────────────
+EMOTION_EDTALK_MAP: dict[str, str] = {
+    # === sad 家族 ===
+    "sad": "sad",
+    "melancholic": "sad",
+    "sorrowful": "sad",
+    "depressed": "sad",
+    "nostalgic": "sad",
+    "感傷": "sad",
+    "悲傷": "sad",
+    "難過": "sad",
+    "低落": "sad",
+    "憂鬱": "sad",
+    "情緒低落": "sad",
+    "懷舊": "sad",
+    # === happy 家族 ===
+    "happy": "happy",
+    "excited": "happy",
+    "energetic": "happy",
+    "cheerful": "happy",
+    "joyful": "happy",
+    "開心": "happy",
+    "快樂": "happy",
+    "興奮": "happy",
+    "歡樂": "happy",
+    "愉快": "happy",
+    # === angry 家族 ===
+    "angry": "angry",
+    "furious": "angry",
+    "passionate": "angry",
+    "intense": "angry",
+    "憤怒": "angry",
+    "生氣": "angry",
+    "熱情": "angry",
+    "激烈": "angry",
+    # === surprised 家族 ===
+    "surprised": "surprised",
+    "shocked": "surprised",
+    "amazed": "surprised",
+    "驚訝": "surprised",
+    "震驚": "surprised",
+    "驚喜": "surprised",
+    # === fear 家族 ===
+    "fear": "fear",
+    "scared": "fear",
+    "anxious": "fear",
+    "terrified": "fear",
+    "恐懼": "fear",
+    "害怕": "fear",
+    "焦慮": "fear",
+    # === disgusted 家族 ===
+    "disgusted": "disgusted",
+    "disgust": "disgusted",
+    "厭惡": "disgusted",
+    "噁心": "disgusted",
+    # === contempt 家族 ===
+    "contempt": "contempt",
+    "scornful": "contempt",
+    "disdain": "contempt",
+    "蔑視": "contempt",
+    "輕蔑": "contempt",
+    # === neutral 家族 ===
+    "neutral": "neutral",
+    "calm": "neutral",
+    "gentle": "neutral",
+    "平靜": "neutral",
+    "溫柔": "neutral",
+    "中性": "neutral",
 }
 
+# 預設情緒：neutral（EDTalk 原生支援）
+DEFAULT_EXP_TYPE = "neutral"
+
+# V1.0 相容：保留 expression_scale 映射（供舊測試使用）
+EMOTION_EXPRESSION_MAP: dict[str, float] = {
+    "sad": 0.5, "melancholic": 0.5, "sorrowful": 0.4,
+    "depressed": 0.4, "nostalgic": 0.6, "gentle": 0.7,
+    "neutral": 1.0, "calm": 0.8, "happy": 1.3,
+    "excited": 1.5, "energetic": 1.4, "angry": 1.2,
+    "passionate": 1.3, "感傷": 0.5, "悲傷": 0.4,
+    "低落": 0.4, "憂鬱": 0.4, "懷舊": 0.6,
+    "溫柔": 0.7, "平靜": 0.8, "開心": 1.3,
+    "興奮": 1.5, "熱情": 1.3, "憤怒": 1.2,
+    "情緒低落": 0.4,
+}
 DEFAULT_EXPRESSION_SCALE = 1.0
 
 
-def mood_to_expression_scale(mood_hint: str) -> float:
+def mood_to_exp_type(mood_hint: str) -> str:
     """
-    從情緒描述推斷 SadTalker expression_scale。
+    從情緒描述推斷 EDTalk exp_type。
 
-    掃描 mood_hint 中是否包含已知情緒關鍵字，
-    取第一個匹配的映射值。找不到則回傳預設值 1.0。
+    掃描 mood_hint 中是否包含已知情緒關鍵字（中英文皆可），
+    取第一個匹配的 EDTalk 表情類型。找不到則回傳 'neutral'。
 
     Args:
-        mood_hint: 情緒描述字串（如 "sad, melancholic"）
+        mood_hint: 情緒描述字串（如 "感傷、悲傷" 或 "sad, melancholic"）
 
     Returns:
-        expression_scale 浮點數（0.0 ~ 2.0）
+        EDTalk exp_type 字串（8 種之一）
     """
     if not mood_hint:
-        return DEFAULT_EXPRESSION_SCALE
+        return DEFAULT_EXP_TYPE
 
+    lower = mood_hint.lower()
+    for keyword, exp_type in EMOTION_EDTALK_MAP.items():
+        if keyword in lower:
+            _logger.info(
+                "情緒映射：'%s' → exp_type='%s'（關鍵字：%s）",
+                mood_hint, exp_type, keyword,
+            )
+            return exp_type
+
+    _logger.info("未匹配情緒關鍵字，使用預設 exp_type='%s'", DEFAULT_EXP_TYPE)
+    return DEFAULT_EXP_TYPE
+
+
+def mood_to_expression_scale(mood_hint: str) -> float:
+    """V1.0 相容函式：從情緒描述推斷 expression_scale。"""
+    if not mood_hint:
+        return DEFAULT_EXPRESSION_SCALE
     lower = mood_hint.lower()
     for keyword, scale in EMOTION_EXPRESSION_MAP.items():
         if keyword in lower:
-            _logger.info(
-                "情緒映射：'%s' → expression_scale=%.1f（關鍵字：%s）",
-                mood_hint, scale, keyword,
-            )
             return scale
-
-    _logger.info("未匹配情緒關鍵字，使用預設 expression_scale=%.1f", DEFAULT_EXPRESSION_SCALE)
     return DEFAULT_EXPRESSION_SCALE
 
 

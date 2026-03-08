@@ -1,15 +1,48 @@
 # 🧠 Active Context
-更新：2026-03-08 02:30
+更新：2026-03-09 04:30
+
+## 🚀 雙軌並行指令（CEO 2026-03-08 下達）
+
+### 軌道一：V1.0 產線上線 ✅
+- ✅ demucs 4.0.1 已安裝於 SadTalker venv
+- ✅ mediapipe 已安裝於 Bot venv
+- ✅ Singer Bot 已啟動（PID 8968/552）
+- 🟢 **V1.0 管線已進入待命狀態，CEO 可隨時丟 MP3 測試**
+
+### 軌道二：EDTalk PoC 概念驗證 ✅ PASS！
+- ✅ git clone EDTalk → D:\Projects\EDTalk
+- ✅ edtalk_env (Python 3.10.11) 建立完成
+- ✅ PyTorch 2.10.0+cu128 Nightly（CUDA 12.8, sm_120 正確識別）
+- ✅ 模型權重全部到位（EDTalk.pt 483MB, Audio2Lip.pt 10.8MB, 8個 .npy）
+- ✅ 全部依賴安裝完成（含 dlib-bin, face-alignment, gfpgan）
+- ✅ 兼容性 Patch 4 處（torch.load, moviepy, librosa, np.float）
+- 🏆 **PoC 壓測結果：**
+  - 表情：sad ✅ PASS
+  - VRAM 峰值：**2,381 MB**（遠低於 12GB 紅線）
+  - VRAM 增量：1,653 MB（僅 1.6GB，比 SadTalker 省 50%）
+  - 執行時間：11 秒（10 秒影片）
+  - 產出：res/poc_edtalk_output.mp4（256×256, 25fps, H.264+AAC）
+  - 授權：Apache 2.0 ✅ 可商用
+
+### 軌道二：EDTalk PoC 概念驗證 ⏳
+- ✅ git clone EDTalk → D:\Projects\EDTalk
+- ✅ edtalk_env (Python 3.10 venv) 建立完成
+- ⚠️ PyTorch cu128 安裝中（RTX 5070 = sm_120，需 cu128 支援）
+  - cu124 → sm_120 不兼容（UserWarning）
+  - typing-extensions 衝突待解
+- ⏳ 模型權重下載中（OpenXLab git lfs pull）
+  - 需要：Audio2Lip.pt, EDTalk_lip_pose.pt, EDTalk.pt
+  - 8 個情緒 .npy 權重已有
+- ✅ poc_edtalk.py 撰寫完成（nvidia-smi VRAM 監控 thread）
+- ⏳ 等 PyTorch + 模型 → 執行 PoC 壓測
 
 ## 目前進行中
 - **WO-20260308-Singer-Quality-Fix**：✅ 全部完成！354 測試通過
-  - ✅ DEV-1: audio_preprocessor.py（Demucs + noise gate + 中英文情緒映射）
-  - ✅ DEV-2: video_renderer.py（expression_scale 橋接，已整合到 SadTalker cmd）
-  - ✅ DEV-3: quality_checker.py（QualityChecker — MediaPipe 嘴唇同步分析）
-  - ✅ Pipeline 整合：8 步 → 10 步（+音訊前處理 +QA 品質檢驗）
-  - ✅ TDD：31 個新測試 + 354 個總測試全部通過
-  - ⏳ 待安裝：demucs（SadTalker venv）、mediapipe（Bot venv）
-  - ⏳ DEV-4 ControlNet 表情重繪（DEFERRED — CEO 已授權碰壁協議）
+  - ✅ DEV-1~3 + Pipeline + TDD 全部完成
+  - ✅ demucs + mediapipe 已安裝
+  - ⏳ DEV-4 情緒控制（EDTalk PoC 進行中）
+  - Scout 探勘報告：docs/research/sadtalker-replacement-scout-2026-03-08.md
+  - 首選：EDTalk（8種情緒標籤CLI）、備選：LivePortrait + MuseTalk 組合
 - **R&D 研發部門成立**：
   - ✅ @Technology-Scout 角色建立（.claude/roles/technology-scout.md）
   - ✅ 技術碰壁協議寫入 CLAUDE.md

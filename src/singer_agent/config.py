@@ -40,8 +40,17 @@ CHARACTER_IMAGE = CHARACTER_DIR / "avatar.png"
 # 工具路徑（從環境變數讀取，含預設值）
 # ─────────────────────────────────────────────────
 
-# SadTalker 安裝目錄（用於對嘴動畫生成）
+# SadTalker 安裝目錄（V1.0 遺留，V2.0 已棄用）
 SADTALKER_DIR = Path(os.environ.get("SADTALKER_DIR", "D:/Projects/SadTalker"))
+
+# EDTalk 安裝目錄（V2.0 核心影片引擎）
+EDTALK_DIR = Path(os.environ.get("EDTALK_DIR", "D:/Projects/EDTalk"))
+# EDTalk 虛擬環境 Python（含 torch + cu128）
+EDTALK_PYTHON = EDTALK_DIR / "edtalk_env" / "Scripts" / "python.exe"
+# EDTalk demo 腳本（支援 --exp_type 情緒標籤）
+EDTALK_DEMO_SCRIPT = EDTALK_DIR / "demo_EDTalk_A_using_predefined_exp_weights.py"
+# EDTalk 預設姿態影片
+EDTALK_POSE_VIDEO = EDTALK_DIR / "test_data" / "pose_source1.mp4"
 
 # FFmpeg 執行檔路徑（用於影片靜態合成降級）
 FFMPEG_BIN = Path(os.environ.get("FFMPEG_BIN", "ffmpeg"))

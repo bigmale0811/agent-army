@@ -25,7 +25,7 @@ from src.singer_agent.models import (
     PipelineRequest, ProjectState, SongSpec,
 )
 from src.singer_agent.audio_preprocessor import (
-    separate_vocals, apply_noise_gate, mood_to_expression_scale,
+    separate_vocals, apply_noise_gate, mood_to_exp_type,
 )
 from src.singer_agent.researcher import SongResearcher
 from src.singer_agent.copywriter import Copywriter
@@ -193,34 +193,34 @@ class Pipeline:
             )
             # noise gate：將人聲軌殘留的低能量段落強制靜音
             gated_path = demucs_dir / "vocals_gated.wav"
-            vocals_for_sadtalker = apply_noise_gate(
+            vocals_for_edtalk = apply_noise_gate(
                 vocals_path, gated_path, dry_run=self.dry_run,
             )
             _logger.info(
                 "音訊前處理完成：原始=%s → 人聲=%s → gated=%s",
                 request.audio_path.name, vocals_path.name,
-                vocals_for_sadtalker.name,
+                vocals_for_edtalk.name,
             )
 
-            # 從 mood_hint 推斷 expression_scale
-            expression_scale = mood_to_expression_scale(request.mood_hint)
+            # 從 mood_hint 推斷 EDTalk 情緒類型
+            exp_type = mood_to_exp_type(request.mood_hint)
 
-            # Step 8: 影片渲染（GPU 密集：SadTalker ~4-5GB VRAM）
-            # 使用人聲軌道（非原始混音）+ 情緒 expression_scale
-            # _render_sadtalker() 內部已有 _pre_launch_cleanup()
+            # Step 8: 影片渲染（V2.0 EDTalk ~2.4GB VRAM）
+            # 使用人聲軌道（非原始混音）+ 情緒 exp_type
+            # _render_edtalk() 內部已有 _pre_launch_cleanup()
             log_vram("Step 8 開始前")
-            check_vram_safety("Step 8 SadTalker 啟動前")
-            self._notify(8, "影片渲染")
+            check_vram_safety("Step 8 EDTalk 啟動前")
+            self._notify(8, "影片渲染（EDTalk）")
             video_path = config.VIDEOS_DIR / f"{project_id}.mp4"
             renderer = VideoRenderer()
             _, render_mode = renderer.render(
-                composite_path, vocals_for_sadtalker,
+                composite_path, vocals_for_edtalk,
                 video_path, dry_run=self.dry_run,
-                expression_scale=expression_scale,
+                exp_type=exp_type,
             )
             state.final_video = str(video_path)
             state.render_mode = render_mode
-            log_vram("Step 8 完成後（SadTalker subprocess 已結束）")
+            log_vram("Step 8 完成後（EDTalk subprocess 已結束）")
 
             # Step 9: QA 品質檢驗（嘴唇同步分析）
             # 使用 MediaPipe Face Mesh（CPU only，0 VRAM）

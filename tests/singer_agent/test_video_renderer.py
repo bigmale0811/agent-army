@@ -1,19 +1,18 @@
 # -*- coding: utf-8 -*-
 """
-DEV-11: video_renderer.py 測試。
+DEV-11: video_renderer.py 測試（V2.0 — EDTalk 引擎）。
 
 測試覆蓋：
-- VideoRenderer 初始化
+- VideoRenderer 初始化（EDTalk 設定）
 - dry_run 回傳 (path, "dry_run")
-- SadTalker Popen + 輪詢模式（mock subprocess）
-- SadTalker venv 不存在時 raise FileNotFoundError
-- _find_new_mp4 靜態方法
-- _terminate_process 靜態方法
-- _poll_for_mp4 輪詢邏輯
+- EDTalk subprocess 呼叫（mock subprocess.run）
+- EDTalk venv/demo 不存在時 raise FileNotFoundError
+- EDTalk 推論失敗時 raise RuntimeError
+- FFmpeg 降級路徑
+- pre_launch_cleanup VRAM 清理
 """
-import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -26,20 +25,20 @@ def _create_file(path: Path, content: bytes = b"\x00" * 100):
 
 class TestVideoRendererInit:
     def test_default_uses_config_paths(self):
-        """預設使用 config 的路徑。"""
+        """預設使用 config 的 EDTalk 路徑。"""
         from src.singer_agent.video_renderer import VideoRenderer
         vr = VideoRenderer()
-        assert vr.sadtalker_dir is not None
+        assert vr.edtalk_dir is not None
         assert vr.ffmpeg_bin is not None
 
-    def test_custom_paths_stored(self, tmp_path):
-        """可注入自訂路徑。"""
+    def test_custom_edtalk_dir(self, tmp_path):
+        """可注入自訂 EDTalk 路徑。"""
         from src.singer_agent.video_renderer import VideoRenderer
         vr = VideoRenderer(
-            sadtalker_dir=tmp_path / "sadtalker",
+            edtalk_dir=tmp_path / "edtalk",
             ffmpeg_bin=tmp_path / "ffmpeg.exe",
         )
-        assert vr.sadtalker_dir == tmp_path / "sadtalker"
+        assert vr.edtalk_dir == tmp_path / "edtalk"
         assert vr.ffmpeg_bin == tmp_path / "ffmpeg.exe"
 
 
@@ -77,97 +76,146 @@ class TestRenderDryRun:
         assert out.exists()
 
 
-class TestRenderSadTalker:
-    """SadTalker Popen + 輪詢模式測試。"""
+class TestRenderEdtalk:
+    """EDTalk subprocess 呼叫測試。"""
 
-    def test_sadtalker_success_returns_sadtalker_mode(self, tmp_path):
-        """SadTalker 正常退出時回傳 'sadtalker' 模式。"""
+    def test_edtalk_success_returns_edtalk_mode(self, tmp_path):
+        """EDTalk 正常完成時回傳 'edtalk' 模式。"""
         from src.singer_agent.video_renderer import VideoRenderer
 
         img = _create_file(tmp_path / "composite.png")
         audio = _create_file(tmp_path / "audio.mp3")
         out = tmp_path / "output" / "video.mp4"
 
-        # 建立 SadTalker venv python.exe
-        sadtalker_dir = tmp_path / "sadtalker"
-        python_exe = sadtalker_dir / "venv" / "Scripts" / "python.exe"
+        # 建立 EDTalk 環境檔案
+        edtalk_dir = tmp_path / "edtalk"
+        python_exe = edtalk_dir / "edtalk_env" / "Scripts" / "python.exe"
+        demo_script = edtalk_dir / "demo_EDTalk_A_using_predefined_exp_weights.py"
+        pose_video = edtalk_dir / "test_data" / "pose_source1.mp4"
         _create_file(python_exe)
+        _create_file(demo_script)
+        _create_file(pose_video)
 
-        # Mock Popen：process 立即退出 returncode=0
-        mock_proc = MagicMock()
-        mock_proc.poll.return_value = 0  # 立即退出
+        def run_side_effect(*args, **kwargs):
+            # 模擬 EDTalk 產出 mp4
+            edtalk_output = edtalk_dir / "res" / f"singer_{out.stem}.mp4"
+            _create_file(edtalk_output, b"\xff" * 500)
+            return MagicMock(returncode=0, stdout="ok", stderr="")
 
-        # SadTalker 正常退出後，mp4 應出現在 result_dir
-        def popen_side_effect(*args, **kwargs):
-            # 模擬 SadTalker 產出 mp4
-            _create_file(out.parent / "2026_03_07_12.00.00.mp4", b"\xff" * 500)
-            return mock_proc
+        with patch("src.singer_agent.video_renderer.subprocess.run",
+                   side_effect=run_side_effect), \
+             patch("src.singer_agent.video_renderer.config") as mock_config:
+            mock_config.EDTALK_DIR = edtalk_dir
+            mock_config.EDTALK_PYTHON = python_exe
+            mock_config.EDTALK_DEMO_SCRIPT = demo_script
+            mock_config.EDTALK_POSE_VIDEO = pose_video
+            mock_config.FFMPEG_BIN = tmp_path / "ffmpeg"
+            mock_config.COMFYUI_URL = "http://localhost:8188"
 
-        with patch("src.singer_agent.video_renderer.subprocess.Popen",
-                   side_effect=popen_side_effect):
-            vr = VideoRenderer(
-                sadtalker_dir=sadtalker_dir,
-                ffmpeg_bin=tmp_path / "ffmpeg",
-            )
-            path, mode = vr.render(img, audio, out)
+            vr = VideoRenderer(edtalk_dir=edtalk_dir)
+            # 注入 mock 路徑
+            vr._edtalk_python = python_exe
+            vr._edtalk_demo = demo_script
+            vr._pose_video = pose_video
+            path, mode = vr.render(img, audio, out, exp_type="sad")
 
-        assert mode == "sadtalker"
+        assert mode == "edtalk"
         assert path == out
         assert out.exists()
 
-    def test_sadtalker_calls_popen(self, tmp_path):
-        """呼叫 subprocess.Popen 執行 SadTalker。"""
+    def test_edtalk_passes_exp_type(self, tmp_path):
+        """EDTalk 命令包含 --exp_type 參數。"""
         from src.singer_agent.video_renderer import VideoRenderer
 
         img = _create_file(tmp_path / "composite.png")
         audio = _create_file(tmp_path / "audio.mp3")
         out = tmp_path / "output" / "video.mp4"
 
-        sadtalker_dir = tmp_path / "sadtalker"
-        python_exe = sadtalker_dir / "venv" / "Scripts" / "python.exe"
+        edtalk_dir = tmp_path / "edtalk"
+        python_exe = edtalk_dir / "edtalk_env" / "Scripts" / "python.exe"
+        demo_script = edtalk_dir / "demo_EDTalk_A_using_predefined_exp_weights.py"
+        pose_video = edtalk_dir / "test_data" / "pose_source1.mp4"
         _create_file(python_exe)
+        _create_file(demo_script)
+        _create_file(pose_video)
 
-        mock_proc = MagicMock()
-        mock_proc.poll.return_value = 0
+        def run_side_effect(*args, **kwargs):
+            edtalk_output = edtalk_dir / "res" / f"singer_{out.stem}.mp4"
+            _create_file(edtalk_output, b"\xff" * 500)
+            return MagicMock(returncode=0, stdout="", stderr="")
 
-        def popen_side_effect(*args, **kwargs):
-            _create_file(out.parent / "result.mp4", b"\xff" * 500)
-            return mock_proc
+        with patch("src.singer_agent.video_renderer.subprocess.run",
+                   side_effect=run_side_effect) as mock_run:
+            vr = VideoRenderer(edtalk_dir=edtalk_dir)
+            vr._edtalk_python = python_exe
+            vr._edtalk_demo = demo_script
+            vr._pose_video = pose_video
+            vr.render(img, audio, out, exp_type="happy")
 
-        with patch("src.singer_agent.video_renderer.subprocess.Popen",
-                   side_effect=popen_side_effect) as mock_popen:
-            vr = VideoRenderer(
-                sadtalker_dir=sadtalker_dir,
-                ffmpeg_bin=tmp_path / "ffmpeg",
-            )
-            vr.render(img, audio, out)
+        cmd = mock_run.call_args[0][0]
+        assert "--exp_type" in cmd
+        assert "happy" in cmd
 
-        assert mock_popen.called
-        # 確認 cmd 包含 inference.py 和 --still
-        cmd_arg = mock_popen.call_args[0][0]
-        assert any("inference.py" in str(a) for a in cmd_arg)
-        assert "--still" in cmd_arg
-        assert "--verbose" in cmd_arg
-
-    def test_sadtalker_venv_missing_raises(self, tmp_path):
-        """SadTalker venv 不存在時直接 raise FileNotFoundError。"""
+    def test_edtalk_python_missing_raises(self, tmp_path):
+        """EDTalk venv Python 不存在時 raise FileNotFoundError。"""
         from src.singer_agent.video_renderer import VideoRenderer
 
         img = _create_file(tmp_path / "composite.png")
         audio = _create_file(tmp_path / "audio.mp3")
         out = tmp_path / "video.mp4"
 
-        # sadtalker_dir 存在但 venv/python.exe 不存在
-        vr = VideoRenderer(
-            sadtalker_dir=tmp_path / "sadtalker",
-            ffmpeg_bin=tmp_path / "ffmpeg",
-        )
+        vr = VideoRenderer(edtalk_dir=tmp_path / "edtalk")
+        vr._edtalk_python = tmp_path / "nonexistent" / "python.exe"
+        vr._edtalk_demo = tmp_path / "demo.py"
 
-        with pytest.raises(FileNotFoundError, match="venv Python"):
+        with pytest.raises(FileNotFoundError, match="EDTalk venv Python"):
             vr.render(img, audio, out)
 
-    def test_sadtalker_process_error_raises(self, tmp_path):
-        """SadTalker process 非零退出碼時 raise CalledProcessError。"""
+    def test_edtalk_demo_missing_raises(self, tmp_path):
+        """EDTalk demo 腳本不存在時 raise FileNotFoundError。"""
+        from src.singer_agent.video_renderer import VideoRenderer
+
+        img = _create_file(tmp_path / "composite.png")
+        audio = _create_file(tmp_path / "audio.mp3")
+        out = tmp_path / "video.mp4"
+
+        python_exe = tmp_path / "python.exe"
+        _create_file(python_exe)
+
+        vr = VideoRenderer(edtalk_dir=tmp_path / "edtalk")
+        vr._edtalk_python = python_exe
+        vr._edtalk_demo = tmp_path / "nonexistent_demo.py"
+
+        with pytest.raises(FileNotFoundError, match="EDTalk demo"):
+            vr.render(img, audio, out)
+
+    def test_edtalk_failure_raises_runtime_error(self, tmp_path):
+        """EDTalk 推論失敗時 raise RuntimeError。"""
+        from src.singer_agent.video_renderer import VideoRenderer
+
+        img = _create_file(tmp_path / "composite.png")
+        audio = _create_file(tmp_path / "audio.mp3")
+        out = tmp_path / "output" / "video.mp4"
+
+        edtalk_dir = tmp_path / "edtalk"
+        python_exe = edtalk_dir / "edtalk_env" / "Scripts" / "python.exe"
+        demo_script = edtalk_dir / "demo.py"
+        pose_video = edtalk_dir / "test_data" / "pose.mp4"
+        _create_file(python_exe)
+        _create_file(demo_script)
+        _create_file(pose_video)
+
+        with patch("src.singer_agent.video_renderer.subprocess.run",
+                   return_value=MagicMock(returncode=1, stdout="", stderr="Error")):
+            vr = VideoRenderer(edtalk_dir=edtalk_dir)
+            vr._edtalk_python = python_exe
+            vr._edtalk_demo = demo_script
+            vr._pose_video = pose_video
+            with pytest.raises(RuntimeError, match="EDTalk 推論失敗"):
+                vr.render(img, audio, out)
+
+    def test_edtalk_timeout_raises_runtime_error(self, tmp_path):
+        """EDTalk 推論超時時 raise RuntimeError。"""
         import subprocess as sp
         from src.singer_agent.video_renderer import VideoRenderer
 
@@ -175,122 +223,26 @@ class TestRenderSadTalker:
         audio = _create_file(tmp_path / "audio.mp3")
         out = tmp_path / "output" / "video.mp4"
 
-        sadtalker_dir = tmp_path / "sadtalker"
-        _create_file(sadtalker_dir / "venv" / "Scripts" / "python.exe")
+        edtalk_dir = tmp_path / "edtalk"
+        python_exe = edtalk_dir / "python.exe"
+        demo_script = edtalk_dir / "demo.py"
+        pose_video = edtalk_dir / "pose.mp4"
+        _create_file(python_exe)
+        _create_file(demo_script)
+        _create_file(pose_video)
 
-        mock_proc = MagicMock()
-        mock_proc.poll.return_value = 1  # 非零退出碼
-        mock_proc.args = ["python", "inference.py"]
-
-        with patch("src.singer_agent.video_renderer.subprocess.Popen",
-                   return_value=mock_proc):
-            vr = VideoRenderer(
-                sadtalker_dir=sadtalker_dir,
-                ffmpeg_bin=tmp_path / "ffmpeg",
-            )
-            with pytest.raises(sp.CalledProcessError):
+        with patch("src.singer_agent.video_renderer.subprocess.run",
+                   side_effect=sp.TimeoutExpired(cmd="test", timeout=600)):
+            vr = VideoRenderer(edtalk_dir=edtalk_dir)
+            vr._edtalk_python = python_exe
+            vr._edtalk_demo = demo_script
+            vr._pose_video = pose_video
+            with pytest.raises(RuntimeError, match="超時"):
                 vr.render(img, audio, out)
 
 
-class TestFindNewMp4:
-    """_find_new_mp4 靜態方法測試。"""
-
-    def test_finds_root_mp4(self, tmp_path):
-        """在根目錄找到新的 mp4。"""
-        from src.singer_agent.video_renderer import VideoRenderer
-
-        _create_file(tmp_path / "new_video.mp4", b"\xff" * 100)
-        result = VideoRenderer._find_new_mp4(tmp_path, set())
-        assert result is not None
-        assert result.name == "new_video.mp4"
-
-    def test_ignores_pre_existing(self, tmp_path):
-        """排除啟動前已存在的 mp4。"""
-        from src.singer_agent.video_renderer import VideoRenderer
-
-        old = _create_file(tmp_path / "old.mp4", b"\xff" * 100)
-        result = VideoRenderer._find_new_mp4(tmp_path, {old})
-        assert result is None
-
-    def test_finds_subdir_mp4(self, tmp_path):
-        """在子目錄中找到新的 mp4。"""
-        from src.singer_agent.video_renderer import VideoRenderer
-
-        subdir = tmp_path / "2026_03_07"
-        _create_file(subdir / "result.mp4", b"\xff" * 100)
-        result = VideoRenderer._find_new_mp4(tmp_path, set())
-        assert result is not None
-        assert result.name == "result.mp4"
-
-    def test_prefers_root_over_subdir(self, tmp_path):
-        """優先回傳根目錄的 mp4。"""
-        from src.singer_agent.video_renderer import VideoRenderer
-
-        _create_file(tmp_path / "root.mp4", b"\xff" * 100)
-        subdir = tmp_path / "sub"
-        _create_file(subdir / "sub.mp4", b"\xff" * 100)
-
-        result = VideoRenderer._find_new_mp4(tmp_path, set())
-        assert result is not None
-        assert result.name == "root.mp4"
-
-    def test_returns_none_when_empty(self, tmp_path):
-        """沒有 mp4 時回傳 None。"""
-        from src.singer_agent.video_renderer import VideoRenderer
-
-        result = VideoRenderer._find_new_mp4(tmp_path, set())
-        assert result is None
-
-
-class TestTerminateProcess:
-    """_terminate_process 靜態方法測試。"""
-
-    def test_no_action_if_already_exited(self):
-        """process 已退出時不做任何動作。"""
-        from src.singer_agent.video_renderer import VideoRenderer
-
-        mock_proc = MagicMock()
-        mock_proc.poll.return_value = 0
-        VideoRenderer._terminate_process(mock_proc)
-        mock_proc.terminate.assert_not_called()
-
-    def test_terminate_called(self):
-        """嘗試 terminate 後 wait。"""
-        from src.singer_agent.video_renderer import VideoRenderer
-
-        mock_proc = MagicMock()
-        mock_proc.poll.return_value = None  # 仍在執行
-        mock_proc.pid = 12345
-        mock_proc.wait.return_value = None
-
-        # terminate 後 poll 回傳已退出
-        def terminate_effect():
-            mock_proc.poll.return_value = 0
-
-        mock_proc.terminate.side_effect = terminate_effect
-        VideoRenderer._terminate_process(mock_proc)
-        mock_proc.terminate.assert_called_once()
-
-    def test_kill_on_timeout(self):
-        """terminate 超時後 kill。"""
-        import subprocess as sp
-        from src.singer_agent.video_renderer import VideoRenderer
-
-        mock_proc = MagicMock()
-        mock_proc.poll.return_value = None
-        mock_proc.pid = 12345
-        mock_proc.wait.side_effect = [
-            sp.TimeoutExpired(cmd="test", timeout=15),
-            None,
-        ]
-
-        VideoRenderer._terminate_process(mock_proc)
-        mock_proc.terminate.assert_called_once()
-        mock_proc.kill.assert_called_once()
-
-
 class TestRenderFfmpeg:
-    """FFmpeg 靜態渲染測試（直接呼叫 _render_ffmpeg）。"""
+    """FFmpeg 靜態渲染測試。"""
 
     def test_ffmpeg_returns_mode(self, tmp_path):
         """FFmpeg 渲染回傳 'ffmpeg_static' 模式。"""
@@ -307,7 +259,7 @@ class TestRenderFfmpeg:
         with patch("src.singer_agent.video_renderer.subprocess.run",
                    side_effect=run_side_effect):
             vr = VideoRenderer(
-                sadtalker_dir=tmp_path / "sadtalker",
+                edtalk_dir=tmp_path / "edtalk",
                 ffmpeg_bin=tmp_path / "ffmpeg",
             )
             path, mode = vr._render_ffmpeg(img, audio, out)
@@ -317,35 +269,38 @@ class TestRenderFfmpeg:
 
 
 class TestPreLaunchCleanup:
-    """DEV-4: SadTalker 啟動前 VRAM 清理。"""
+    """EDTalk 啟動前 VRAM 清理。"""
 
-    def test_pre_launch_cleanup_called_before_popen(self, tmp_path):
-        """SadTalker 啟動前呼叫 _pre_launch_cleanup。"""
+    def test_pre_launch_cleanup_called_before_render(self, tmp_path):
+        """EDTalk 渲染前呼叫 _pre_launch_cleanup。"""
         from src.singer_agent.video_renderer import VideoRenderer
 
         img = _create_file(tmp_path / "composite.png")
         audio = _create_file(tmp_path / "audio.mp3")
         out = tmp_path / "output" / "video.mp4"
 
-        sadtalker_dir = tmp_path / "sadtalker"
-        _create_file(sadtalker_dir / "venv" / "Scripts" / "python.exe")
+        edtalk_dir = tmp_path / "edtalk"
+        python_exe = edtalk_dir / "python.exe"
+        demo_script = edtalk_dir / "demo.py"
+        pose_video = edtalk_dir / "pose.mp4"
+        _create_file(python_exe)
+        _create_file(demo_script)
+        _create_file(pose_video)
 
-        mock_proc = MagicMock()
-        mock_proc.poll.return_value = 0
+        def run_side_effect(*args, **kwargs):
+            edtalk_output = edtalk_dir / "res" / f"singer_{out.stem}.mp4"
+            _create_file(edtalk_output, b"\xff" * 500)
+            return MagicMock(returncode=0, stdout="", stderr="")
 
-        def popen_side_effect(*args, **kwargs):
-            _create_file(out.parent / "result.mp4", b"\xff" * 500)
-            return mock_proc
-
-        with patch("src.singer_agent.video_renderer.subprocess.Popen",
-                   side_effect=popen_side_effect), \
+        with patch("src.singer_agent.video_renderer.subprocess.run",
+                   side_effect=run_side_effect), \
              patch.object(
                  VideoRenderer, "_pre_launch_cleanup"
              ) as mock_cleanup:
-            vr = VideoRenderer(
-                sadtalker_dir=sadtalker_dir,
-                ffmpeg_bin=tmp_path / "ffmpeg",
-            )
+            vr = VideoRenderer(edtalk_dir=edtalk_dir)
+            vr._edtalk_python = python_exe
+            vr._edtalk_demo = demo_script
+            vr._pose_video = pose_video
             vr.render(img, audio, out)
             mock_cleanup.assert_called_once()
 
@@ -365,11 +320,11 @@ class TestPreLaunchCleanup:
             mock_cleanup.assert_not_called()
 
     def test_pre_launch_cleanup_calls_vram_functions(self, tmp_path):
-        """_pre_launch_cleanup 呼叫 free_comfyui + force_cleanup + log + check。"""
+        """_pre_launch_cleanup 呼叫所有 VRAM 清理函式。"""
         from src.singer_agent.video_renderer import VideoRenderer
 
         vr = VideoRenderer(
-            sadtalker_dir=tmp_path / "sadtalker",
+            edtalk_dir=tmp_path / "edtalk",
             ffmpeg_bin=tmp_path / "ffmpeg",
         )
 
@@ -382,3 +337,55 @@ class TestPreLaunchCleanup:
             m_force.assert_called_once()
             m_log.assert_called_once()
             m_check.assert_called_once()
+
+
+class TestMoodToExpType:
+    """V2.0 情緒映射測試。"""
+
+    def test_sad_chinese(self):
+        """中文 '感傷' 映射到 'sad'。"""
+        from src.singer_agent.audio_preprocessor import mood_to_exp_type
+        assert mood_to_exp_type("感傷") == "sad"
+
+    def test_sad_english(self):
+        """英文 'melancholic' 映射到 'sad'。"""
+        from src.singer_agent.audio_preprocessor import mood_to_exp_type
+        assert mood_to_exp_type("melancholic") == "sad"
+
+    def test_happy_chinese(self):
+        """中文 '開心' 映射到 'happy'。"""
+        from src.singer_agent.audio_preprocessor import mood_to_exp_type
+        assert mood_to_exp_type("開心") == "happy"
+
+    def test_angry_chinese(self):
+        """中文 '憤怒' 映射到 'angry'。"""
+        from src.singer_agent.audio_preprocessor import mood_to_exp_type
+        assert mood_to_exp_type("憤怒") == "angry"
+
+    def test_surprised_chinese(self):
+        """中文 '驚訝' 映射到 'surprised'。"""
+        from src.singer_agent.audio_preprocessor import mood_to_exp_type
+        assert mood_to_exp_type("驚訝") == "surprised"
+
+    def test_fear_english(self):
+        """英文 'scared' 映射到 'fear'。"""
+        from src.singer_agent.audio_preprocessor import mood_to_exp_type
+        assert mood_to_exp_type("scared") == "fear"
+
+    def test_default_neutral(self):
+        """無匹配時回傳 'neutral'。"""
+        from src.singer_agent.audio_preprocessor import mood_to_exp_type
+        assert mood_to_exp_type("unknown mood") == "neutral"
+
+    def test_empty_returns_neutral(self):
+        """空字串回傳 'neutral'。"""
+        from src.singer_agent.audio_preprocessor import mood_to_exp_type
+        assert mood_to_exp_type("") == "neutral"
+
+    def test_all_8_emotions_covered(self):
+        """確認 8 種 EDTalk 情緒全部有對應。"""
+        from src.singer_agent.audio_preprocessor import EMOTION_EDTALK_MAP
+        edtalk_types = set(EMOTION_EDTALK_MAP.values())
+        expected = {"angry", "contempt", "disgusted", "fear",
+                    "happy", "sad", "surprised", "neutral"}
+        assert edtalk_types == expected

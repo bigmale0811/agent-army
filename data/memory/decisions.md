@@ -21,3 +21,12 @@
 - **角色**：多媒體品管專家，負責影音管線自動化品質驗收
 - **工具鏈**：MediaPipe + librosa + OpenCV + Silero VAD
 - **設定檔**：`.claude/roles/multimedia-qa-specialist.md`
+
+## 2026-03-08 技術碰壁協議：SadTalker 架構確認無解
+- **碰壁確認**：SadTalker `--expression_scale` / `--pose_style` 均無法改變情緒類型，表情由 3DMM 音訊解碼決定，架構上不可外部注入情緒標籤
+- **@Technology-Scout 探勘結果**（探勘報告：`docs/research/sadtalker-replacement-scout-2026-03-08.md`）：
+  - 淘汰：Hallo3（80GB VRAM）、Hallo2（16GB+）、AniPortrait（16GB）、EchoMimic V3（16GB）
+  - 尚未釋出代碼：EmotiveTalk（CVPR 2025）、LES-Talker（arXiv 2025）
+  - **首選候選**：EDTalk（ECCV 2024 Oral，支援 8 種情緒 CLI 注入，456 stars）— 需 PoC 驗證 VRAM
+  - **備選候選**：LivePortrait（17.9k stars, MIT）+ MuseTalk 1.5（5.4k stars, MIT）組合管線
+- **下一步**：精算師（Sonnet）對兩個方案進行 VRAM 攻擊測試，架構師（Opus）裁決
