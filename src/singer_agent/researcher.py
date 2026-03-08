@@ -109,6 +109,10 @@ class SongResearcher:
         _logger.debug("發送研究 prompt 至 Ollama")
         response = self.client.generate(prompt)
 
+        # 防護：generate() 可能回傳 None（Ollama 異常回應）
+        if not response:
+            raise ValueError("Ollama 回傳空白回應，無法解析歌曲研究")
+
         # 清理可能的 markdown 包裹（```json ... ```）
         text = response.strip()
         if text.startswith("```"):
@@ -119,6 +123,13 @@ class SongResearcher:
                 text = text[:-3]
 
         data = json.loads(text)
+
+        # 防護：json.loads("null") → None，或回傳非 dict 結構
+        if not isinstance(data, dict):
+            raise TypeError(
+                f"Ollama 回應非 JSON 物件（type={type(data).__name__}），"
+                f"原始回應前 200 字：{text[:200]}"
+            )
 
         return SongResearch(
             genre=data["genre"],

@@ -29,14 +29,14 @@ class OllamaClient:
     Args:
         base_url: Ollama 服務 URL，預設從 config.OLLAMA_URL 讀取
         model: 模型名稱，預設 "qwen3:14b"
-        timeout: HTTP 請求超時秒數，預設 120
+        timeout: HTTP 請求超時秒數，預設 300（qwen3 14B 推理較慢）
     """
 
     def __init__(
         self,
         base_url: str | None = None,
         model: str = "qwen3:14b",
-        timeout: int = 120,
+        timeout: int = 300,
     ) -> None:
         self.base_url = base_url or config.OLLAMA_URL
         self.model = model
@@ -76,12 +76,21 @@ class OllamaClient:
             "model": self.model,
             "prompt": prompt,
             "stream": False,
+            # 關閉 qwen3 thinking mode，直接輸出回應（節省時間）
+            "think": False,
             **kwargs,
         }
         try:
             resp = requests.post(url, json=body, timeout=self.timeout)
             resp.raise_for_status()
-            return resp.json()["response"]
+            # 防護 resp.json() 回傳 None 或缺少 "response" 欄位
+            data = resp.json()
+            if data is None:
+                raise TypeError("Ollama 回傳 null JSON body")
+            result = data["response"]
+            if result is None:
+                raise TypeError("Ollama 回傳 response=null")
+            return result
         except (requests.exceptions.ConnectionError,
                 requests.exceptions.Timeout) as e:
             raise OllamaUnavailableError(
@@ -91,8 +100,8 @@ class OllamaClient:
             raise OllamaUnavailableError(
                 f"Ollama 回傳 HTTP 錯誤: {e}"
             ) from e
-        except (ValueError, KeyError) as e:
-            # JSON 解碼失敗或回應中缺少 "response" 欄位
+        except (ValueError, KeyError, TypeError) as e:
+            # JSON 解碼失敗、缺少 "response" 欄位、或回傳 None
             raise OllamaUnavailableError(
                 f"Ollama 回應格式無效: {e}"
             ) from e
