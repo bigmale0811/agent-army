@@ -20,6 +20,8 @@ import re
 from typing import Any, Callable
 
 from src.singer_agent import config
+from src.singer_agent.models import PipelineRequest
+from src.singer_agent.pipeline import Pipeline
 from src.singer_agent.project_store import ProjectStore
 
 # 延遲匯入 python-telegram-bot，避免未安裝時模組載入失敗
@@ -286,6 +288,170 @@ async def error_handler(update: Any, context: Any) -> None:
 
 
 # ─────────────────────────────────────────────────
+# Worker：佇列消費者 + 管線執行 + 影片回傳
+# ─────────────────────────────────────────────────
+
+def _parse_title_artist(file_name: str) -> tuple[str, str]:
+    """
+    從檔名推斷歌曲標題與歌手。
+
+    嘗試以底線分割，取前兩段作為 title / artist。
+    無法解析時使用檔名作為 title，artist 設為 "未知"。
+
+    Args:
+        file_name: 原始檔名（已消毒）
+
+    Returns:
+        (title, artist) 元組
+    """
+    stem = Path(file_name).stem
+    parts = stem.split("_", maxsplit=1)
+    if len(parts) >= 2:
+        return parts[0], parts[1]
+    return stem, "未知"
+
+
+def _safe_filename(title: str, artist: str) -> str:
+    """
+    產生安全的 Telegram 檔名（避免編碼問題導致 send_document 失敗）。
+
+    移除 Telegram API 不支援的控制字元與特殊符號，
+    確保檔名只包含可安全傳輸的字元。
+
+    Args:
+        title: 歌曲標題
+        artist: 歌手名
+
+    Returns:
+        安全的 mp4 檔名
+    """
+    import re
+    # 移除控制字元與 Telegram 不支援的特殊符號
+    safe_title = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '', title).strip()
+    safe_artist = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '', artist).strip()
+    # 如果清理後為空，使用 fallback
+    safe_title = safe_title or "MV"
+    safe_artist = safe_artist or "Unknown"
+    # 限制長度（Telegram 檔名限制約 64 字元）
+    max_len = 50
+    if len(safe_title) + len(safe_artist) > max_len:
+        safe_title = safe_title[:30]
+        safe_artist = safe_artist[:20]
+    return f"{safe_title}_{safe_artist}.mp4"
+
+
+async def worker(bot: Any) -> None:
+    """
+    非同步 worker：持續從 _job_queue 取出任務並執行管線。
+
+    流程：
+    1. 從佇列取出 job
+    2. 通知使用者開始處理
+    3. 在執行緒池中同步執行 Pipeline.run()
+    4. 成功時傳送影片檔給使用者
+    5. 失敗時通知使用者錯誤訊息
+
+    此 coroutine 設計為永久迴圈，應在 Application 啟動時
+    透過 asyncio.create_task() 啟動。
+    """
+    _logger.info("Worker 啟動，等待任務...")
+
+    while True:
+        job = await _job_queue.get()
+        chat_id: int = job["chat_id"]
+        file_path: str = job["file_path"]
+        file_name: str = job["file_name"]
+
+        _logger.info("Worker 取得任務：%s（chat_id=%d）", file_name, chat_id)
+
+        try:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=f"🎬 開始處理 {file_name}，8 個步驟約需 20-30 分鐘（影片渲染較耗時）...",
+            )
+
+            title, artist = _parse_title_artist(file_name)
+
+            request = PipelineRequest(
+                audio_path=Path(file_path),
+                title=title,
+                artist=artist,
+            )
+
+            progress_cb = make_progress_callback(bot, chat_id)
+            pipeline = Pipeline(
+                character_image=config.CHARACTER_IMAGE,
+                progress_callback=progress_cb,
+                dry_run=False,
+            )
+
+            # 在執行緒池中執行同步管線，避免阻塞事件迴圈
+            loop = asyncio.get_running_loop()
+            state = await loop.run_in_executor(None, pipeline.run, request)
+
+            if state.status == "completed" and state.final_video:
+                video_path = Path(state.final_video)
+                if video_path.exists() and video_path.stat().st_size > 200:
+                    # 使用安全檔名，避免編碼問題導致 send_document 失敗
+                    safe_name = _safe_filename(title, artist)
+                    try:
+                        with open(str(video_path), "rb") as vf:
+                            await bot.send_document(
+                                chat_id=chat_id,
+                                document=vf,
+                                filename=safe_name,
+                                caption=(
+                                    f"✅ MV 製作完成！\n"
+                                    f"🎵 {title} — {artist}\n"
+                                    f"📋 專案 ID：{state.project_id}"
+                                ),
+                            )
+                    except Exception as send_exc:
+                        # 影片傳送失敗時，用最簡檔名重試一次
+                        _logger.warning(
+                            "send_document 失敗（%s），用 fallback 檔名重試",
+                            send_exc,
+                        )
+                        with open(str(video_path), "rb") as vf:
+                            await bot.send_document(
+                                chat_id=chat_id,
+                                document=vf,
+                                filename=f"{state.project_id}.mp4",
+                                caption=f"✅ MV 製作完成！專案 ID：{state.project_id}",
+                            )
+                else:
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text=(
+                            f"⚠️ 管線完成但影片檔案異常\n"
+                            f"專案 ID：{state.project_id}"
+                        ),
+                    )
+            else:
+                error_msg = state.error_message or "未知錯誤"
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=(
+                        f"❌ MV 製作失敗\n"
+                        f"原因：{error_msg}\n"
+                        f"專案 ID：{state.project_id}"
+                    ),
+                )
+
+        except Exception as exc:
+            _logger.error("Worker 處理任務失敗：%s", exc)
+            try:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=f"❌ 處理失敗：發生未預期錯誤，請稍後再試。",
+                )
+            except Exception as send_exc:
+                _logger.error("Worker 通知失敗：%s", send_exc)
+        finally:
+            _job_queue.task_done()
+
+
+# ─────────────────────────────────────────────────
 # Application 工廠
 # ─────────────────────────────────────────────────
 
@@ -323,6 +489,14 @@ def create_application() -> Any:
 
     # 註冊全域錯誤處理器
     app.add_error_handler(error_handler)
+
+    # 在 Application 啟動後自動啟動 Worker
+    async def _post_init(application: Any) -> None:
+        """Application 初始化完成後啟動 worker。"""
+        asyncio.create_task(worker(application.bot))
+        _logger.info("Worker coroutine 已啟動")
+
+    app.post_init = _post_init
 
     _logger.info("Telegram Bot Application 已建立")
     return app

@@ -454,3 +454,151 @@ class TestCreateApplication:
         MockApp.builder.assert_called_once()
         builder.token.assert_called_once_with("fake-token-123")
         assert app is not None
+
+
+# ─────────────────────────────────────────────────
+# 測試類別：_parse_title_artist
+# ─────────────────────────────────────────────────
+
+class TestParseTitleArtist:
+    """測試從檔名推斷歌曲標題與歌手。"""
+
+    def test_title_artist_from_underscore(self):
+        """底線分割的檔名正確取得 title 與 artist。"""
+        from src.singer_agent.bot import _parse_title_artist
+        title, artist = _parse_title_artist("愛你_周杰倫.mp3")
+        assert title == "愛你"
+        assert artist == "周杰倫"
+
+    def test_no_underscore_uses_stem_as_title(self):
+        """無底線時 title 為整個檔名，artist 為未知。"""
+        from src.singer_agent.bot import _parse_title_artist
+        title, artist = _parse_title_artist("一首歌.mp3")
+        assert title == "一首歌"
+        assert artist == "未知"
+
+    def test_multiple_underscores_keeps_rest(self):
+        """多個底線時 artist 包含後續所有部分。"""
+        from src.singer_agent.bot import _parse_title_artist
+        title, artist = _parse_title_artist("愛我的人_裘海正_2026.mp3")
+        assert title == "愛我的人"
+        assert artist == "裘海正_2026"
+
+
+# ─────────────────────────────────────────────────
+# 測試類別：Worker
+# ─────────────────────────────────────────────────
+
+class TestWorker:
+    """測試 Worker 佇列消費者 + 管線執行 + 影片回傳。"""
+
+    @pytest.mark.asyncio
+    @patch("src.singer_agent.bot.Pipeline")
+    @patch("src.singer_agent.bot.config")
+    async def test_worker_sends_video_on_success(self, mock_config, MockPipeline):
+        """管線成功時 worker 傳送影片檔給使用者。"""
+        import tempfile
+        import os
+        from src.singer_agent import bot
+        from src.singer_agent.bot import worker
+
+        mock_config.CHARACTER_IMAGE = Path("/tmp/avatar.png")
+
+        # 建立暫時影片檔（大於 200 bytes）
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+            f.write(b"\x00" * 500)
+            video_path = f.name
+
+        try:
+            # 模擬成功的 ProjectState
+            mock_state = MagicMock()
+            mock_state.status = "completed"
+            mock_state.final_video = video_path
+            mock_state.project_id = "proj-test"
+            mock_state.error_message = ""
+
+            MockPipeline.return_value.run.return_value = mock_state
+
+            mock_bot = MagicMock()
+            mock_bot.send_message = AsyncMock()
+            mock_bot.send_document = AsyncMock()
+
+            # 放入一個 job
+            original_queue = bot._job_queue
+            test_queue = asyncio.Queue()
+            bot._job_queue = test_queue
+
+            await test_queue.put({
+                "chat_id": 12345,
+                "file_path": "/tmp/test.mp3",
+                "file_name": "測試歌_歌手.mp3",
+            })
+
+            # 執行 worker（設 timeout 避免永久阻塞）
+            task = asyncio.create_task(worker(mock_bot))
+            await asyncio.sleep(0.2)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+            # 驗證 send_document 被呼叫（影片回傳）
+            mock_bot.send_document.assert_called_once()
+            call_kwargs = mock_bot.send_document.call_args
+            assert call_kwargs[1]["chat_id"] == 12345
+
+            bot._job_queue = original_queue
+        finally:
+            try:
+                os.unlink(video_path)
+            except PermissionError:
+                pass  # Windows 檔案鎖定，略過清理
+
+    @pytest.mark.asyncio
+    @patch("src.singer_agent.bot.Pipeline")
+    @patch("src.singer_agent.bot.config")
+    async def test_worker_notifies_on_failure(self, mock_config, MockPipeline):
+        """管線失敗時 worker 通知使用者錯誤訊息。"""
+        from src.singer_agent import bot
+        from src.singer_agent.bot import worker
+
+        mock_config.CHARACTER_IMAGE = Path("/tmp/avatar.png")
+
+        mock_state = MagicMock()
+        mock_state.status = "failed"
+        mock_state.final_video = ""
+        mock_state.project_id = "proj-fail"
+        mock_state.error_message = "LLM 離線"
+
+        MockPipeline.return_value.run.return_value = mock_state
+
+        mock_bot = MagicMock()
+        mock_bot.send_message = AsyncMock()
+        mock_bot.send_document = AsyncMock()
+
+        original_queue = bot._job_queue
+        test_queue = asyncio.Queue()
+        bot._job_queue = test_queue
+
+        await test_queue.put({
+            "chat_id": 12345,
+            "file_path": "/tmp/test.mp3",
+            "file_name": "測試歌_歌手.mp3",
+        })
+
+        task = asyncio.create_task(worker(mock_bot))
+        await asyncio.sleep(0.1)
+        task.cancel()
+
+        # 不應傳送影片
+        mock_bot.send_document.assert_not_called()
+
+        # 應發送失敗訊息（至少 2 次 send_message：開始處理 + 失敗通知）
+        assert mock_bot.send_message.call_count >= 2
+        all_texts = " ".join(
+            c[1]["text"] for c in mock_bot.send_message.call_args_list
+        )
+        assert "失敗" in all_texts or "❌" in all_texts
+
+        bot._job_queue = original_queue

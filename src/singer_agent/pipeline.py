@@ -24,11 +24,15 @@ from src.singer_agent import config
 from src.singer_agent.models import (
     PipelineRequest, ProjectState, SongSpec,
 )
+from src.singer_agent.audio_preprocessor import (
+    separate_vocals, apply_noise_gate, mood_to_expression_scale,
+)
 from src.singer_agent.researcher import SongResearcher
 from src.singer_agent.copywriter import Copywriter
 from src.singer_agent.background_gen import BackgroundGenerator
 from src.singer_agent.compositor import Compositor
 from src.singer_agent.precheck import QualityPrecheck
+from src.singer_agent.quality_checker import QualityChecker
 from src.singer_agent.video_renderer import VideoRenderer
 from src.singer_agent.project_store import ProjectStore
 from src.singer_agent.vram_monitor import log_vram, check_vram_safety
@@ -62,9 +66,12 @@ class Pipeline:
         self.progress_callback = progress_callback
         self.dry_run = dry_run
 
+    # 管線總步驟數（新增 Step 7 音訊前處理 + Step 9 QA 品質檢驗）
+    _TOTAL_STEPS = 10
+
     def _notify(self, step: int, description: str) -> None:
         """發送進度通知。"""
-        _logger.info("Step %d/8: %s", step, description)
+        _logger.info("Step %d/%d: %s", step, self._TOTAL_STEPS, description)
         if self.progress_callback:
             self.progress_callback(step, description)
 
@@ -177,23 +184,73 @@ class Pipeline:
                 )
                 return state
 
-            # Step 7: 影片渲染（GPU 密集：SadTalker ~4-5GB VRAM）
+            # Step 7: 音訊前處理（Demucs 人聲分離 + noise gate）
+            # Demucs 以 subprocess 隔離，VRAM ~3-4GB，結束後自動釋放
+            self._notify(7, "音訊前處理（人聲分離）")
+            demucs_dir = config.DATA_DIR / "demucs" / project_id
+            vocals_path = separate_vocals(
+                request.audio_path, demucs_dir, dry_run=self.dry_run,
+            )
+            # noise gate：將人聲軌殘留的低能量段落強制靜音
+            gated_path = demucs_dir / "vocals_gated.wav"
+            vocals_for_sadtalker = apply_noise_gate(
+                vocals_path, gated_path, dry_run=self.dry_run,
+            )
+            _logger.info(
+                "音訊前處理完成：原始=%s → 人聲=%s → gated=%s",
+                request.audio_path.name, vocals_path.name,
+                vocals_for_sadtalker.name,
+            )
+
+            # 從 mood_hint 推斷 expression_scale
+            expression_scale = mood_to_expression_scale(request.mood_hint)
+
+            # Step 8: 影片渲染（GPU 密集：SadTalker ~4-5GB VRAM）
+            # 使用人聲軌道（非原始混音）+ 情緒 expression_scale
             # _render_sadtalker() 內部已有 _pre_launch_cleanup()
-            log_vram("Step 7 開始前")
-            check_vram_safety("Step 7 SadTalker 啟動前")
-            self._notify(7, "影片渲染")
+            log_vram("Step 8 開始前")
+            check_vram_safety("Step 8 SadTalker 啟動前")
+            self._notify(8, "影片渲染")
             video_path = config.VIDEOS_DIR / f"{project_id}.mp4"
             renderer = VideoRenderer()
             _, render_mode = renderer.render(
-                composite_path, request.audio_path,
+                composite_path, vocals_for_sadtalker,
                 video_path, dry_run=self.dry_run,
+                expression_scale=expression_scale,
             )
             state.final_video = str(video_path)
             state.render_mode = render_mode
-            log_vram("Step 7 完成後（SadTalker subprocess 已結束）")
+            log_vram("Step 8 完成後（SadTalker subprocess 已結束）")
 
-            # Step 8: 儲存專案
-            self._notify(8, "儲存專案狀態")
+            # Step 9: QA 品質檢驗（嘴唇同步分析）
+            # 使用 MediaPipe Face Mesh（CPU only，0 VRAM）
+            self._notify(9, "品質檢驗（嘴唇同步）")
+            qa = QualityChecker()
+            qa_result = qa.check(
+                video_path, vocals_path, dry_run=self.dry_run,
+            )
+            state.metadata["qa_result"] = {
+                "passed": qa_result.passed,
+                "lip_sync_score": qa_result.lip_sync_score,
+                "silent_motion_ratio": qa_result.silent_motion_ratio,
+                "total_frames": qa_result.total_frames,
+                "silent_frames": qa_result.silent_frames,
+            }
+            if not qa_result.passed:
+                _logger.warning(
+                    "QA 品質檢驗未通過：lip_sync=%.1f, "
+                    "靜音段運動比率=%.1f%%",
+                    qa_result.lip_sync_score,
+                    qa_result.silent_motion_ratio * 100,
+                )
+                # QA 未通過仍輸出影片（附帶警告），不阻擋管線
+                state.metadata["qa_warning"] = (
+                    f"靜音段嘴唇運動比率 {qa_result.silent_motion_ratio:.1%} "
+                    f"超過閾值，lip_sync_score={qa_result.lip_sync_score:.1f}"
+                )
+
+            # Step 10: 儲存專案
+            self._notify(10, "儲存專案狀態")
             state.status = "completed"
             state.completed_at = datetime.now().isoformat()
 

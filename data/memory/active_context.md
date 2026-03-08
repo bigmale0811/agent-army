@@ -1,8 +1,19 @@
 # 🧠 Active Context
-更新：2026-03-07 19:46
+更新：2026-03-08 02:30
 
 ## 目前進行中
-- **SadTalker 掛起修復**：改用 Popen + 輪詢策略
+- **WO-20260308-Singer-Quality-Fix**：✅ 全部完成！354 測試通過
+  - ✅ DEV-1: audio_preprocessor.py（Demucs + noise gate + 中英文情緒映射）
+  - ✅ DEV-2: video_renderer.py（expression_scale 橋接，已整合到 SadTalker cmd）
+  - ✅ DEV-3: quality_checker.py（QualityChecker — MediaPipe 嘴唇同步分析）
+  - ✅ Pipeline 整合：8 步 → 10 步（+音訊前處理 +QA 品質檢驗）
+  - ✅ TDD：31 個新測試 + 354 個總測試全部通過
+  - ⏳ 待安裝：demucs（SadTalker venv）、mediapipe（Bot venv）
+  - ⏳ DEV-4 ControlNet 表情重繪（DEFERRED — CEO 已授權碰壁協議）
+- **R&D 研發部門成立**：
+  - ✅ @Technology-Scout 角色建立（.claude/roles/technology-scout.md）
+  - ✅ 技術碰壁協議寫入 CLAUDE.md
+  - ✅ 決策記錄到 decisions.md
   - 根因：SadTalker process 產出 mp4 後卡在 cleanup（os.system ffmpeg / seamlessClone / shutil.rmtree）
   - 修復：video_renderer.py 改用 Popen + _poll_for_mp4 偵測產出 + _terminate_process 強制結束
   - 新增 `--verbose` flag 跳過 shutil.rmtree
@@ -69,4 +80,7 @@
   - DEV-2: compositor.py → rembg 後 gc + empty_cache
   - DEV-3: vram_monitor.py（新模組）+ pipeline.py 監控
   - DEV-4: video_renderer.py → _pre_launch_cleanup
-- ⏳ 待 CEO 確認是否 commit + push
+- ✅ Commit bb9428f + Push 完成（5 commits 一次推上 GitHub）
+- ✅ run_singer_pipeline.py E2E 進入點（--audio/--image/--meta/--dry-run）
+- ✅ test_inputs/ 目錄已建立，dry-run 驗證通過
+- ⏳ 等 CEO 放入 MP3 + 角色圖片，準備實彈測試

@@ -198,24 +198,36 @@ class TestTelegramConfig:
     """測試 Telegram Bot 相關環境變數讀取。"""
 
     def test_telegram_bot_token_from_env(self, monkeypatch):
-        """TELEGRAM_BOT_TOKEN 可從環境變數讀取。"""
-        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "1234567890:test_token_abc")
-        import importlib
-        import src.singer_agent.config as cfg_module
-        importlib.reload(cfg_module)
-        assert cfg_module.TELEGRAM_BOT_TOKEN == "1234567890:test_token_abc"
-
-    def test_telegram_bot_token_default_empty(self, monkeypatch):
-        """TELEGRAM_BOT_TOKEN 未設置時預設為空字串（同時攔截 dotenv 及系統環境）。"""
+        """TELEGRAM_BOT_TOKEN 可從環境變數讀取（SINGER_BOT_TOKEN 不存在時 fallback）。"""
         import importlib
         import unittest.mock as mock
         import src.singer_agent.config as cfg_module
-        # 攔截 os.environ.get 讓特定 key 回傳空字串
+        # 攔截 os.environ.get：SINGER_BOT_TOKEN 回傳預設值，模擬未設定
+        original_get = os.environ.get
+
+        def patched_get(key, *args):
+            if key == "SINGER_BOT_TOKEN":
+                return args[0] if args else ""
+            if key == "TELEGRAM_BOT_TOKEN":
+                return "1234567890:test_token_abc"
+            return original_get(key, *args)
+
+        with mock.patch("os.environ.get", side_effect=patched_get):
+            with mock.patch("dotenv.load_dotenv"):
+                importlib.reload(cfg_module)
+        assert cfg_module.TELEGRAM_BOT_TOKEN == "1234567890:test_token_abc"
+
+    def test_telegram_bot_token_default_empty(self, monkeypatch):
+        """兩個 token 變數都未設置時預設為空字串。"""
+        import importlib
+        import unittest.mock as mock
+        import src.singer_agent.config as cfg_module
+        # 攔截 os.environ.get 讓 token 相關 key 回傳空字串
         original_get = os.environ.get
 
         def patched_get(key, default=""):
-            if key == "TELEGRAM_BOT_TOKEN":
-                return ""
+            if key in ("TELEGRAM_BOT_TOKEN", "SINGER_BOT_TOKEN"):
+                return default
             return original_get(key, default)
 
         with mock.patch("os.environ.get", side_effect=patched_get):
@@ -224,43 +236,58 @@ class TestTelegramConfig:
         assert cfg_module.TELEGRAM_BOT_TOKEN == ""
 
     def test_allowed_user_ids_from_env(self, monkeypatch):
-        """ALLOWED_USER_IDS 逗號分隔字串應解析為 list[int]。"""
-        monkeypatch.setenv("ALLOWED_USER_IDS", "123456789,987654321,111222333")
+        """ALLOWED_USER_IDS 逗號分隔字串應解析為 list[int]（SINGER_CHAT_ID 不存在時 fallback）。"""
         import importlib
+        import unittest.mock as mock
+        monkeypatch.delenv("SINGER_CHAT_ID", raising=False)
+        monkeypatch.setenv("ALLOWED_USER_IDS", "123456789,987654321,111222333")
         import src.singer_agent.config as cfg_module
-        importlib.reload(cfg_module)
+        with mock.patch("dotenv.load_dotenv"):
+            importlib.reload(cfg_module)
         assert cfg_module.ALLOWED_USER_IDS == [123456789, 987654321, 111222333]
 
     def test_allowed_user_ids_single(self, monkeypatch):
         """ALLOWED_USER_IDS 只有一個 ID 時正確解析。"""
-        monkeypatch.setenv("ALLOWED_USER_IDS", "123456789")
         import importlib
+        import unittest.mock as mock
+        monkeypatch.delenv("SINGER_CHAT_ID", raising=False)
+        monkeypatch.setenv("ALLOWED_USER_IDS", "123456789")
         import src.singer_agent.config as cfg_module
-        importlib.reload(cfg_module)
+        with mock.patch("dotenv.load_dotenv"):
+            importlib.reload(cfg_module)
         assert cfg_module.ALLOWED_USER_IDS == [123456789]
 
     def test_allowed_user_ids_empty_default(self, monkeypatch):
-        """ALLOWED_USER_IDS 未設置時預設為空 list。"""
-        monkeypatch.delenv("ALLOWED_USER_IDS", raising=False)
+        """兩個 ID 變數都未設置時預設為空 list。"""
         import importlib
+        import unittest.mock as mock
+        monkeypatch.delenv("SINGER_CHAT_ID", raising=False)
+        monkeypatch.delenv("ALLOWED_USER_IDS", raising=False)
         import src.singer_agent.config as cfg_module
-        importlib.reload(cfg_module)
+        with mock.patch("dotenv.load_dotenv"):
+            importlib.reload(cfg_module)
         assert cfg_module.ALLOWED_USER_IDS == []
 
     def test_allowed_user_ids_is_list_of_int(self, monkeypatch):
         """ALLOWED_USER_IDS 解析結果每個元素必須為 int 型別。"""
-        monkeypatch.setenv("ALLOWED_USER_IDS", "100,200,300")
         import importlib
+        import unittest.mock as mock
+        monkeypatch.delenv("SINGER_CHAT_ID", raising=False)
+        monkeypatch.setenv("ALLOWED_USER_IDS", "100,200,300")
         import src.singer_agent.config as cfg_module
-        importlib.reload(cfg_module)
+        with mock.patch("dotenv.load_dotenv"):
+            importlib.reload(cfg_module)
         assert all(isinstance(uid, int) for uid in cfg_module.ALLOWED_USER_IDS)
 
     def test_allowed_user_ids_with_spaces(self, monkeypatch):
         """ALLOWED_USER_IDS 逗號周圍有空白時也能正確解析。"""
-        monkeypatch.setenv("ALLOWED_USER_IDS", "123 , 456 , 789")
         import importlib
+        import unittest.mock as mock
+        monkeypatch.delenv("SINGER_CHAT_ID", raising=False)
+        monkeypatch.setenv("ALLOWED_USER_IDS", "123 , 456 , 789")
         import src.singer_agent.config as cfg_module
-        importlib.reload(cfg_module)
+        with mock.patch("dotenv.load_dotenv"):
+            importlib.reload(cfg_module)
         assert cfg_module.ALLOWED_USER_IDS == [123, 456, 789]
 
 

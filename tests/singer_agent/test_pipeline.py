@@ -159,6 +159,50 @@ class TestPipelineProgressCallback:
         assert first_call_step == 1
 
 
+class TestPipelineStatusSaveOrder:
+    """驗證 status 在 store.save() 之前已設定為 completed。"""
+
+    def test_save_receives_completed_status(self, tmp_path):
+        """store.save() 被呼叫時，state.status 已是 completed。"""
+        from src.singer_agent.pipeline import Pipeline
+        char_img = tmp_path / "avatar.png"
+        from PIL import Image as _Img; _Img.new("RGBA", (200, 300), (255, 0, 0)).save(char_img)
+        p = Pipeline(character_image=char_img, dry_run=True)
+        req = _make_request(tmp_path)
+
+        saved_states = []
+
+        with patch("src.singer_agent.pipeline.ProjectStore") as MockStore:
+            # 攔截 save() 呼叫，記錄當時的 status
+            def capture_save(state):
+                saved_states.append(state.status)
+            MockStore.return_value.save.side_effect = capture_save
+            result = p.run(req)
+
+        assert len(saved_states) == 1
+        assert saved_states[0] == "completed"
+        assert result.status == "completed"
+
+    def test_completed_at_set_before_save(self, tmp_path):
+        """store.save() 被呼叫時，completed_at 已有值。"""
+        from src.singer_agent.pipeline import Pipeline
+        char_img = tmp_path / "avatar.png"
+        from PIL import Image as _Img; _Img.new("RGBA", (200, 300), (255, 0, 0)).save(char_img)
+        p = Pipeline(character_image=char_img, dry_run=True)
+        req = _make_request(tmp_path)
+
+        saved_completed_at = []
+
+        with patch("src.singer_agent.pipeline.ProjectStore") as MockStore:
+            def capture_save(state):
+                saved_completed_at.append(state.completed_at)
+            MockStore.return_value.save.side_effect = capture_save
+            p.run(req)
+
+        assert len(saved_completed_at) == 1
+        assert saved_completed_at[0] != ""
+
+
 class TestPipelineErrorHandling:
     def test_step_failure_sets_status_failed(self, tmp_path):
         """步驟失敗時 status=failed，不閃退。"""

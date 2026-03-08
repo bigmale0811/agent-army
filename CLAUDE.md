@@ -166,6 +166,50 @@ docs/features/<name>/
 - 架構級重構（影響 3+ 模組）
 - CEO 手動指派
 
+## Technology Wall Protocol（技術碰壁協議）
+
+當 FSM 工作流中遭遇**技術天花板**時，強制啟動外部探勘流程：
+
+### 觸發條件（任一成立即觸發）
+1. **遞迴修復失敗 3 次**：Stage 6 連續 3 輪 FAIL，且 error-analyst 判斷為工具本身的限制
+2. **智囊團判定無解**：三方辯論結論為「現有技術棧無法達成品質目標」
+3. **已知工具 Bug 阻擋**：上游開源專案的未修復 Bug 導致管線無法推進
+4. **CEO 手動指派**：CEO 直接要求探勘替代方案
+
+### 碰壁處理流程
+```
+FSM 正常流程 → Stage 6 ❌❌❌ (3次失敗)
+                    │
+                    ▼
+            🛑 強制暫停開發
+                    │
+                    ▼
+        🔍 @Technology-Scout 啟動探勘
+            - WebSearch / WebFetch 搜尋替代方案
+            - 撰寫 PoC 腳本（scripts/poc/）
+            - 驗證 VRAM ≤ 10GB
+            - 產出探勘報告（docs/research/）
+                    │
+                    ▼
+        📋 探勘報告交付架構師審查
+                    │
+                    ▼
+        🟡 Stage 2（架構師整合新框架）
+                    │
+                    ▼
+            FSM 正常流程繼續
+```
+
+### 核心規則
+- **開發全面暫停**：碰壁協議啟動後，不允許繼續在舊方案上修修補補
+- **Scout 只寫 PoC**：不可直接修改產品程式碼
+- **必須通過精算師**：Scout 的候選方案必須經過 Sonnet 的 VRAM 攻擊驗證
+- **架構師最終拍板**：新框架整合由架構師設計，開發者執行
+- **記錄到 decisions.md**：每次碰壁事件及探勘結果必須記錄
+
+### 角色設定檔
+- `.claude/roles/technology-scout.md`
+
 ## Common Commands
 - python -m pytest tests/
 - python -m pytest tests/ --cov=src/

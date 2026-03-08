@@ -1,0 +1,236 @@
+"""
+音訊前處理模組：使用 Demucs 進行人聲分離。
+
+解決問題：SadTalker 在間奏/呼吸段嘴巴亂動。
+方案：提取純人聲軌道，非人聲段自然為靜音 → SadTalker 不會驅動嘴唇。
+VRAM：3-4GB（隔離 subprocess，結束後自動釋放）。
+"""
+
+import logging
+import subprocess
+from pathlib import Path
+
+from src.singer_agent import config
+
+_logger = logging.getLogger(__name__)
+
+# 情緒 → expression_scale 映射表
+# expression_scale 控制 SadTalker 3DMM 表情幅度
+EMOTION_EXPRESSION_MAP: dict[str, float] = {
+    # 英文關鍵字
+    "sad": 0.5,
+    "melancholic": 0.5,
+    "sorrowful": 0.4,
+    "depressed": 0.4,
+    "nostalgic": 0.6,
+    "gentle": 0.7,
+    "neutral": 1.0,
+    "calm": 0.8,
+    "happy": 1.3,
+    "excited": 1.5,
+    "energetic": 1.4,
+    "angry": 1.2,
+    "passionate": 1.3,
+    # 繁體中文關鍵字
+    "感傷": 0.5,
+    "悲傷": 0.4,
+    "低落": 0.4,
+    "憂鬱": 0.4,
+    "懷舊": 0.6,
+    "溫柔": 0.7,
+    "平靜": 0.8,
+    "開心": 1.3,
+    "興奮": 1.5,
+    "熱情": 1.3,
+    "憤怒": 1.2,
+    "情緒低落": 0.4,
+}
+
+DEFAULT_EXPRESSION_SCALE = 1.0
+
+
+def mood_to_expression_scale(mood_hint: str) -> float:
+    """
+    從情緒描述推斷 SadTalker expression_scale。
+
+    掃描 mood_hint 中是否包含已知情緒關鍵字，
+    取第一個匹配的映射值。找不到則回傳預設值 1.0。
+
+    Args:
+        mood_hint: 情緒描述字串（如 "sad, melancholic"）
+
+    Returns:
+        expression_scale 浮點數（0.0 ~ 2.0）
+    """
+    if not mood_hint:
+        return DEFAULT_EXPRESSION_SCALE
+
+    lower = mood_hint.lower()
+    for keyword, scale in EMOTION_EXPRESSION_MAP.items():
+        if keyword in lower:
+            _logger.info(
+                "情緒映射：'%s' → expression_scale=%.1f（關鍵字：%s）",
+                mood_hint, scale, keyword,
+            )
+            return scale
+
+    _logger.info("未匹配情緒關鍵字，使用預設 expression_scale=%.1f", DEFAULT_EXPRESSION_SCALE)
+    return DEFAULT_EXPRESSION_SCALE
+
+
+def separate_vocals(
+    audio_path: Path,
+    output_dir: Path,
+    python_bin: str | None = None,
+    dry_run: bool = False,
+) -> Path:
+    """
+    使用 Demucs htdemucs 分離人聲軌道。
+
+    Demucs 以獨立 subprocess 執行（使用 SadTalker venv 的 Python，
+    確保有 torch + CUDA），結束後 VRAM 自動釋放。
+
+    Args:
+        audio_path: 原始音訊路徑（完整混音）
+        output_dir: 輸出目錄
+        python_bin: 執行 Demucs 的 Python 路徑（需含 torch + demucs）
+        dry_run: 乾跑模式，直接回傳原始音訊
+
+    Returns:
+        人聲軌道 WAV 路徑（失敗時 fallback 為原始音訊）
+    """
+    if dry_run:
+        _logger.info("dry_run 模式：跳過人聲分離")
+        return audio_path
+
+    # 使用 SadTalker 的 venv Python（確保有 torch + CUDA）
+    if python_bin is None:
+        sadtalker_python = config.SADTALKER_DIR / "venv" / "Scripts" / "python.exe"
+        python_bin = str(sadtalker_python)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        python_bin, "-m", "demucs",
+        "--two-stems", "vocals",   # 只分離人聲 + 伴奏（速度最快）
+        "-n", "htdemucs",          # 使用 htdemucs 模型（精度高、VRAM ~3GB）
+        "-o", str(output_dir),
+        str(audio_path),
+    ]
+
+    _logger.info("Demucs 人聲分離開始：%s", audio_path.name)
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,  # 5 分鐘超時
+        )
+    except subprocess.TimeoutExpired:
+        _logger.error("Demucs 超時（>300s），fallback 使用原始音訊")
+        return audio_path
+    except FileNotFoundError:
+        _logger.error("Demucs Python 不存在：%s，fallback 使用原始音訊", python_bin)
+        return audio_path
+
+    if result.returncode != 0:
+        _logger.error("Demucs 失敗（exit=%d）：%s", result.returncode, result.stderr[:500])
+        _logger.warning("fallback 使用原始音訊")
+        return audio_path
+
+    # Demucs 輸出結構：{output_dir}/htdemucs/{stem}/vocals.wav
+    vocals_path = output_dir / "htdemucs" / audio_path.stem / "vocals.wav"
+
+    if not vocals_path.exists():
+        _logger.warning("Demucs 輸出不存在：%s，fallback 使用原始音訊", vocals_path)
+        return audio_path
+
+    _logger.info("人聲分離完成：%s（%.1f MB）", vocals_path, vocals_path.stat().st_size / 1e6)
+    return vocals_path
+
+
+def apply_noise_gate(
+    vocals_path: Path,
+    output_path: Path,
+    ffmpeg_bin: str | None = None,
+    threshold: float = 0.01,
+    dry_run: bool = False,
+) -> Path:
+    """
+    對人聲軌道套用噪音閘門（ffmpeg agate 濾鏡）。
+
+    將能量低於閾值的段落強制靜音，確保 SadTalker 在
+    間奏、呼吸、殘留伴奏段落不會驅動嘴唇運動。
+
+    必須在 Demucs 人聲分離之後使用，因為純人聲軌的噪音底層
+    極低，noise gate 才能精準分離歌聲與靜音段。
+
+    Args:
+        vocals_path: 人聲軌道路徑（Demucs 輸出）
+        output_path: 處理後的音訊路徑
+        ffmpeg_bin: ffmpeg 執行檔路徑
+        threshold: 閘門閾值（線性比例，0.01 ≈ -40dB）
+        dry_run: 乾跑模式，直接回傳原始路徑
+
+    Returns:
+        處理後的音訊路徑（失敗時 fallback 為輸入路徑）
+    """
+    if dry_run:
+        _logger.info("dry_run 模式：跳過噪音閘門")
+        return vocals_path
+
+    if ffmpeg_bin is None:
+        ffmpeg_bin = str(config.FFMPEG_BIN)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # agate 參數說明：
+    # threshold: 閘門觸發閾值（線性）
+    # ratio: 衰減比（100 = 幾乎完全靜音）
+    # range: 最大增益衰減 dB（-100 = 完全靜音）
+    # attack: 開啟速度 ms（5ms 快速反應）
+    # release: 關閉速度 ms（50ms 自然衰減）
+    af_filter = (
+        f"agate=threshold={threshold}:ratio=100"
+        f":range=-100:attack=5:release=50"
+    )
+
+    cmd = [
+        ffmpeg_bin,
+        "-y",
+        "-i", str(vocals_path),
+        "-af", af_filter,
+        str(output_path),
+    ]
+
+    _logger.info("噪音閘門開始：threshold=%.4f（≈%.0fdB）", threshold, 20 * __import__("math").log10(max(threshold, 1e-10)))
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except subprocess.TimeoutExpired:
+        _logger.error("噪音閘門超時（>120s），fallback 使用原始音訊")
+        return vocals_path
+    except FileNotFoundError:
+        _logger.error("ffmpeg 不存在：%s，fallback 使用原始音訊", ffmpeg_bin)
+        return vocals_path
+
+    if result.returncode != 0:
+        _logger.error("噪音閘門失敗（exit=%d）：%s", result.returncode, result.stderr[:500])
+        _logger.warning("fallback 使用原始音訊")
+        return vocals_path
+
+    if not output_path.exists():
+        _logger.warning("噪音閘門輸出不存在：%s，fallback 使用原始音訊", output_path)
+        return vocals_path
+
+    _logger.info(
+        "噪音閘門完成：%s（%.1f MB）",
+        output_path, output_path.stat().st_size / 1e6,
+    )
+    return output_path

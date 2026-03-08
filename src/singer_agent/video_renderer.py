@@ -47,6 +47,7 @@ class VideoRenderer:
         audio_path: Path,
         output_path: Path,
         dry_run: bool = False,
+        expression_scale: float = 1.0,
     ) -> tuple[Path, str]:
         """
         渲染影片。
@@ -56,6 +57,9 @@ class VideoRenderer:
             audio_path: 音訊檔案路徑
             output_path: 輸出影片路徑
             dry_run: True 時建立佔位檔
+            expression_scale: SadTalker 表情幅度（0.0~2.0）
+                預設 1.0，低於 1.0 降低表情強度（適合悲傷），
+                高於 1.0 放大表情（適合歡樂）
 
         Returns:
             (輸出路徑, 渲染模式) — 模式為 "sadtalker"、"ffmpeg_static" 或 "dry_run"
@@ -68,7 +72,10 @@ class VideoRenderer:
             return output_path, "dry_run"
 
         # 直接執行 SadTalker，失敗時讓錯誤傳播（不自動降級 FFmpeg）
-        return self._render_sadtalker(composite_image, audio_path, output_path)
+        return self._render_sadtalker(
+            composite_image, audio_path, output_path,
+            expression_scale=expression_scale,
+        )
 
     # 輪詢間隔（秒）與穩定判定次數
     _POLL_INTERVAL: int = 10
@@ -80,6 +87,7 @@ class VideoRenderer:
         composite_image: Path,
         audio_path: Path,
         output_path: Path,
+        expression_scale: float = 1.0,
     ) -> tuple[Path, str]:
         """
         透過 SadTalker subprocess 渲染對嘴動畫。
@@ -87,8 +95,16 @@ class VideoRenderer:
         使用 Popen + 輪詢策略：啟動 SadTalker 後持續偵測 mp4 產出，
         一旦檔案穩定（大小不再變化）就強制結束 process。
         這能避免 SadTalker 在 cleanup 階段掛住的問題。
+
+        expression_scale 控制 3DMM 表情幅度：
+        - < 1.0：壓抑表情（適合悲傷、低落情緒）
+        - = 1.0：原始表情
+        - > 1.0：放大表情（適合歡樂、興奮情緒）
         """
-        _logger.info("開始 SadTalker 渲染")
+        _logger.info(
+            "開始 SadTalker 渲染（expression_scale=%.2f）",
+            expression_scale,
+        )
 
         # 前置 VRAM 清理：確保 ComfyUI / rembg 已釋放 VRAM
         self._pre_launch_cleanup()
@@ -120,6 +136,19 @@ class VideoRenderer:
                 "--preprocess", "full",  # 全臉預處理
                 "--verbose",      # 跳過 shutil.rmtree 清理（避免卡死）
             ]
+
+            # 動態調整表情幅度（情緒映射驅動）
+            # expression_scale 控制 SadTalker 3DMM 表情係數
+            if expression_scale != 1.0:
+                cmd.extend([
+                    "--expression_scale",
+                    f"{expression_scale:.2f}",
+                ])
+                _logger.info(
+                    "SadTalker 表情幅度：%.2f（%s）",
+                    expression_scale,
+                    "壓抑" if expression_scale < 1.0 else "放大",
+                )
 
             # 記錄啟動前已存在的 mp4（避免誤判舊檔案）
             pre_existing = set(result_dir.glob("*.mp4"))

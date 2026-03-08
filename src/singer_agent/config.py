@@ -58,7 +58,11 @@ OLLAMA_URL: str = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 # ─────────────────────────────────────────────────
 
 # Telegram Bot API Token（從 @BotFather 取得）
-TELEGRAM_BOT_TOKEN: str = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+# 優先使用 SINGER_BOT_TOKEN，與主 Bot 分開管理
+TELEGRAM_BOT_TOKEN: str = os.environ.get(
+    "SINGER_BOT_TOKEN",
+    os.environ.get("TELEGRAM_BOT_TOKEN", ""),
+)
 
 
 def _parse_user_ids(raw: str) -> list[int]:
@@ -87,8 +91,12 @@ def _parse_user_ids(raw: str) -> list[int]:
 
 
 # 允許使用 Telegram Bot 的使用者 ID 列表
+# 優先使用 SINGER_CHAT_ID，與主 Bot 分開管理
 ALLOWED_USER_IDS: list[int] = _parse_user_ids(
-    os.environ.get("ALLOWED_USER_IDS", "")
+    os.environ.get(
+        "SINGER_CHAT_ID",
+        os.environ.get("ALLOWED_USER_IDS", ""),
+    )
 )
 
 
