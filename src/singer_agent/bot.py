@@ -248,16 +248,23 @@ async def audio_handler(update: Any, context: Any) -> None:
         await update.message.reply_text("❌ 下載檔案失敗，請稍後再試。")
         return
 
+    # 擷取 caption 作為情緒/曲風提示（V2.0 EDTalk 情緒控制）
+    caption = (update.message.caption or "").strip()
+
     # 放入任務佇列
     job = {
         "chat_id": update.effective_chat.id,
         "file_path": str(dest_path),
         "file_name": safe_name,
+        "caption": caption,
     }
     await _job_queue.put(job)
 
+    # 回覆確認訊息（含情緒提示回顯）
+    mood_info = f"\n🎭 情緒提示：{caption}" if caption else ""
     await update.message.reply_text(
-        f"✅ 已收到 {safe_name}，已排入處理佇列（目前排隊數：{_job_queue.qsize()}）"
+        f"✅ 已收到 {safe_name}，已排入處理佇列"
+        f"（目前排隊數：{_job_queue.qsize()}）{mood_info}"
     )
 
 
@@ -361,21 +368,33 @@ async def worker(bot: Any) -> None:
         chat_id: int = job["chat_id"]
         file_path: str = job["file_path"]
         file_name: str = job["file_name"]
+        caption: str = job.get("caption", "")
 
-        _logger.info("Worker 取得任務：%s（chat_id=%d）", file_name, chat_id)
+        _logger.info(
+            "Worker 取得任務：%s（chat_id=%d, caption=%r）",
+            file_name, chat_id, caption,
+        )
 
         try:
+            mood_info = f"\n🎭 情緒：{caption}" if caption else ""
             await bot.send_message(
                 chat_id=chat_id,
-                text=f"🎬 開始處理 {file_name}，8 個步驟約需 20-30 分鐘（影片渲染較耗時）...",
+                text=(
+                    f"🎬 開始處理 {file_name}，"
+                    f"10 個步驟約需 3-5 分鐘...{mood_info}"
+                ),
             )
 
             title, artist = _parse_title_artist(file_name)
 
+            # caption 整段作為 mood_hint，用於：
+            # 1. EDTalk 情緒標籤（mood_to_exp_type 匹配 70+ 關鍵字）
+            # 2. Ollama 歌曲研究提示（genre_hint / mood_hint）
             request = PipelineRequest(
                 audio_path=Path(file_path),
                 title=title,
                 artist=artist,
+                mood_hint=caption,
             )
 
             progress_cb = make_progress_callback(bot, chat_id)
