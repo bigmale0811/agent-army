@@ -176,6 +176,11 @@ class BackgroundGenerator:
         # Step 1: 提交 prompt，取得 prompt_id
         with urllib.request.urlopen(req, timeout=30) as resp:
             result = json.loads(resp.read())
+        # 防護：ComfyUI 可能回傳 null 或缺少 prompt_id
+        if not isinstance(result, dict) or "prompt_id" not in result:
+            raise RuntimeError(
+                f"ComfyUI 回應異常（缺少 prompt_id）：{str(result)[:200]}"
+            )
         prompt_id = result["prompt_id"]
         _logger.info("ComfyUI prompt 已提交：%s", prompt_id)
 
@@ -227,8 +232,10 @@ class BackgroundGenerator:
                 outputs = entry.get("outputs", {})
                 for node_id, node_output in outputs.items():
                     images = node_output.get("images", [])
-                    if images:
-                        filename = images[0]["filename"]
+                    if images and isinstance(images[0], dict):
+                        filename = images[0].get("filename", "")
+                        if not filename:
+                            continue
                         _logger.info("ComfyUI 生成完成：%s", filename)
                         return filename
 

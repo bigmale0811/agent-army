@@ -109,8 +109,10 @@ class Pipeline:
             completed_at="",
         )
 
+        current_step = 0  # 步驟追蹤（錯誤時顯示在哪一步失敗）
         try:
             # Step 1: 歌曲研究
+            current_step = 1
             self._notify(1, "歌曲風格研究")
             researcher = SongResearcher()
             research = researcher.research(
@@ -124,6 +126,7 @@ class Pipeline:
             )
 
             # Step 2: 建立 SongSpec
+            current_step = 2
             self._notify(2, "建立歌曲規格")
             song_spec = SongSpec(
                 title=request.title,
@@ -135,12 +138,14 @@ class Pipeline:
             state.song_spec = song_spec
 
             # Step 3: YouTube 文案
+            current_step = 3
             self._notify(3, "產出 YouTube 文案")
             copywriter = Copywriter()
             copy_spec = copywriter.write(song_spec, dry_run=self.dry_run)
             state.copy_spec = copy_spec
 
             # Step 4: 背景生成（GPU 密集：ComfyUI SDXL ~7-8GB VRAM）
+            current_step = 4
             log_vram("Step 4 開始前")
             self._notify(4, "生成背景圖")
             bg_path = config.BACKGROUNDS_DIR / f"{project_id}.png"
@@ -153,6 +158,7 @@ class Pipeline:
             log_vram("Step 4 完成後（ComfyUI 已卸載）")
 
             # Step 5: 去背 + 合成（GPU 密集：rembg U²-Net ~170MB）
+            current_step = 5
             log_vram("Step 5 開始前")
             self._notify(5, "角色去背與合成")
             comp = Compositor()
@@ -169,6 +175,7 @@ class Pipeline:
             log_vram("Step 5 完成後")
 
             # Step 6: 品質預檢
+            current_step = 6
             self._notify(6, "品質預檢")
             precheck = QualityPrecheck()
             precheck_result = precheck.run(
@@ -186,6 +193,7 @@ class Pipeline:
 
             # Step 7: 音訊前處理（Demucs 人聲分離 + noise gate）
             # Demucs 以 subprocess 隔離，VRAM ~3-4GB，結束後自動釋放
+            current_step = 7
             self._notify(7, "音訊前處理（人聲分離）")
             demucs_dir = config.DATA_DIR / "demucs" / project_id
             vocals_path = separate_vocals(
@@ -206,6 +214,7 @@ class Pipeline:
             exp_type = mood_to_exp_type(request.mood_hint)
 
             # Step 8: 影片渲染（V2.0 EDTalk ~2.4GB VRAM）
+            current_step = 8
             # 使用人聲軌道（非原始混音）+ 情緒 exp_type
             # _render_edtalk() 內部已有 _pre_launch_cleanup()
             log_vram("Step 8 開始前")
@@ -223,6 +232,7 @@ class Pipeline:
             log_vram("Step 8 完成後（EDTalk subprocess 已結束）")
 
             # Step 9: QA 品質檢驗（嘴唇同步分析）
+            current_step = 9
             # 使用 MediaPipe Face Mesh（CPU only，0 VRAM）
             self._notify(9, "品質檢驗（嘴唇同步）")
             qa = QualityChecker()
@@ -250,6 +260,7 @@ class Pipeline:
                 )
 
             # Step 10: 儲存專案
+            current_step = 10
             self._notify(10, "儲存專案狀態")
             state.status = "completed"
             state.completed_at = datetime.now().isoformat()
@@ -259,8 +270,13 @@ class Pipeline:
             _logger.info("管線完成：%s", project_id)
 
         except Exception as exc:
-            _logger.error("管線失敗（Step 中斷）：%s", exc)
+            _logger.error(
+                "管線失敗（Step %d 中斷, %s）：%s",
+                current_step, type(exc).__name__, exc,
+            )
             state.status = "failed"
-            state.error_message = str(exc)
+            state.error_message = (
+                f"[Step {current_step}/10] {type(exc).__name__}: {exc}"
+            )
 
         return state
