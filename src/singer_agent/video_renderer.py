@@ -60,8 +60,9 @@ class VideoRenderer:
         self._musetalk_python = config.MUSETALK_PYTHON
         self._musetalk_version = config.MUSETALK_VERSION
 
-    # EDTalk 推論超時（秒）
-    _RENDER_TIMEOUT: int = 600
+    # 推論超時（秒）
+    _RENDER_TIMEOUT: int = 600       # EDTalk（短片段，~11s/10s 影片）
+    _MUSETALK_TIMEOUT: int = 1200    # MuseTalk（完整歌曲 ~4 分鐘需 5-8 分鐘推理）
 
     def render(
         self,
@@ -163,6 +164,8 @@ class VideoRenderer:
                 cmd,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=self._RENDER_TIMEOUT,
                 cwd=str(self.edtalk_dir),
             )
@@ -312,7 +315,9 @@ class VideoRenderer:
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=self._RENDER_TIMEOUT,
+                encoding="utf-8",
+                errors="replace",
+                timeout=self._MUSETALK_TIMEOUT,
                 cwd=str(self.musetalk_dir),
             )
 
@@ -349,9 +354,9 @@ class VideoRenderer:
             return output_path, "musetalk"
 
         except subprocess.TimeoutExpired:
-            _logger.error("MuseTalk 推論超時（>%ds）", self._RENDER_TIMEOUT)
+            _logger.error("MuseTalk 推論超時（>%ds）", self._MUSETALK_TIMEOUT)
             raise RuntimeError(
-                f"MuseTalk 推論超時（>{self._RENDER_TIMEOUT}s）"
+                f"MuseTalk 推論超時（>{self._MUSETALK_TIMEOUT}s）"
             )
 
         finally:
@@ -389,6 +394,8 @@ class VideoRenderer:
             cmd,
             check=True,
             capture_output=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=300,
         )
 

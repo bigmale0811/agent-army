@@ -195,6 +195,8 @@ def separate_vocals(
             cmd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=300,  # 5 分鐘超時
         )
     except subprocess.TimeoutExpired:
@@ -281,6 +283,8 @@ def apply_noise_gate(
             cmd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=120,
         )
     except subprocess.TimeoutExpired:
