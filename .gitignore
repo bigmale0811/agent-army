@@ -37,24 +37,9 @@ frontend/node_modules/
 # 第三方 vendor（git clone，不追蹤）
 vendor/
 
-# TradingAgents 分析產出的原始 state log（太大）
-eval_results/
-
-# 分析狀態與鎖定檔（執行時產生）
-reports/.status/
-reports/.locks/
-reports/.logs/
-
-# 生成的分析報告（執行時產出）
-reports/*.pdf
-reports/*.md
-
 # Singer Agent 執行時資料
 data/singer_agent/projects/
 data/singer_agent/poc_edtalk/
-
-# Stock Analyzer 執行時資料
-data/stock_analyzer/
 
 # 外部專案 / 第三方依賴（git clone，不追蹤）
 ProjectsEDTalk/
