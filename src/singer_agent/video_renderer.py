@@ -268,10 +268,14 @@ class VideoRenderer:
 
             # 產生 MuseTalk inference YAML 配置
             yaml_config = result_dir / "inference_config.yaml"
+            # Windows 路徑反斜線在 YAML 雙引號中會被解讀為跳脫字元
+            # 統一轉為正斜線避免 ScannerError
+            safe_img = str(ascii_img).replace("\\", "/")
+            safe_audio = str(ascii_audio).replace("\\", "/")
             yaml_content = (
                 f"singer_task:\n"
-                f'  video_path: "{ascii_img}"\n'
-                f'  audio_path: "{ascii_audio}"\n'
+                f'  video_path: "{safe_img}"\n'
+                f'  audio_path: "{safe_audio}"\n'
             )
             yaml_config.write_text(yaml_content, encoding="utf-8")
 
