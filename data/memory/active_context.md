@@ -1,15 +1,39 @@
 # 🧠 Active Context
-更新：2026-03-09 04:30
+更新：2026-03-09 05:27
 
-## 🚀 雙軌並行指令（CEO 2026-03-08 下達）
+## 🏆 Singer Agent V2.0 正式上線！
 
-### 軌道一：V1.0 產線上線 ✅
+### 🚀 部署狀態
+- ✅ git push 完成 (bb9428f..1e3abb1 master → master)
+- ✅ 舊 Bot (PID 8968/552) 已終止
+- ✅ V2.0 Bot 已啟動 (PID 1332/22376, 05:26:38)
+- 🟢 **V2.0 點唱機已上線，等待 CEO 點歌！**
+
+### V2.0 EDTalk 整合完成 ✅
+- ✅ video_renderer.py 完整重寫：SadTalker → EDTalk subprocess
+- ✅ audio_preprocessor.py: EMOTION_EDTALK_MAP (70+ 關鍵字 → 8 種情緒)
+- ✅ config.py: EDTalk 路徑常數 (EDTALK_DIR/PYTHON/DEMO_SCRIPT/POSE_VIDEO)
+- ✅ pipeline.py: Step 8 改用 mood_to_exp_type() + EDTalk
+- ✅ test_video_renderer.py: 完整重寫 EDTalk 測試
+- ✅ **962 tests passed, 0 failed** (31.41s)
+- ✅ Commit `1e3abb1` 已提交
+- 🏆 VRAM 峰值 2.4GB（比 SadTalker 省 50%+）
+- 🏆 8 種原生情緒支援：sad/happy/angry/surprised/fear/disgusted/contempt/neutral
+
+### V1.0 → V2.0 升級摘要
+| 項目 | V1.0 (SadTalker) | V2.0 (EDTalk) |
+|------|-----------------|---------------|
+| VRAM | 4-5GB | 2.4GB |
+| 情緒 | expression_scale 0.3-1.2 | 8 種原生標籤 |
+| 穩定性 | Popen + polling（卡 cleanup） | subprocess.run（乾淨退出） |
+| 授權 | 非商用限制 | Apache 2.0 |
+
+### 軌道一：V1.0 產線 (已被 V2.0 取代)
 - ✅ demucs 4.0.1 已安裝於 SadTalker venv
 - ✅ mediapipe 已安裝於 Bot venv
-- ✅ Singer Bot 已啟動（PID 8968/552）
-- 🟢 **V1.0 管線已進入待命狀態，CEO 可隨時丟 MP3 測試**
+- ✅ V1.0 品質防線保留：Demucs + noise gate + MediaPipe QA
 
-### 軌道二：EDTalk PoC 概念驗證 ✅ PASS！
+### EDTalk PoC 概念驗證 ✅ PASS！
 - ✅ git clone EDTalk → D:\Projects\EDTalk
 - ✅ edtalk_env (Python 3.10.11) 建立完成
 - ✅ PyTorch 2.10.0+cu128 Nightly（CUDA 12.8, sm_120 正確識別）

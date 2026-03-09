@@ -16,6 +16,24 @@
 - [2026-03-08] **HR 招募**：新增 generative-video-specialist.md（影片生成 + VRAM 安全）與 multimedia-pipeline-engineer.md（多媒體管線工程），roles/ 從 5 → 7 個角色
 - [2026-03-08] **智囊團辯論結論（Singer VRAM）**：採用「GPU 時間分割 + 主動記憶體回收」策略。否決量化方案（Singer 不控制 SD 載入）與換模型方案（已是 FP16）。關鍵補丁：ComfyUI POST /free 卸載 + rembg session 釋放 + VRAM 監控。派工單 WO-20260308。
 
+## 2026-03-09 CEO 指令：MuseTalk PoC 概念驗證
+
+### 決策
+- **CEO 質疑並推翻先前結論**：MuseTalk 不應被排除
+- **CEO 指示**：嘗試 MuseTalk，不要只依賴 EDTalk
+
+### 調查結論（推翻先前 Scout 報告的部分結論）
+1. **Issue #40（Windows 卡死）**→ CLOSED，已修復（2024-05-31）
+2. **RTX 50 系列支援**→ Issue #334 已有解法：PyTorch 2.7+cu128 + mmcv 2.1.0，RTX 5090 用戶確認可跑
+3. **VRAM 需求**→ RTX 3050 Ti（4GB）fp16 即可跑，遠低於先前 Scout 估計的 4-6GB
+4. **專案活躍度**→ 5,397 ⭐，2026-03-08 仍有更新
+
+### 情緒動態化架構決策（CEO 建議）
+- **否決**：純 librosa 能量分析驅動情緒（太粗糙，激昂悲歌能量也高，前奏也是低能量）
+- **採用**：Qwen3 根據歌曲名稱 + 歌手 + caption 輸出時間軸情緒分配
+- **能量分析**：降級為輔助參考，不作為主要驅動源
+- **教訓**：Scout 報告中對 MuseTalk 的負面評估未經實際 GitHub 驗證，應先查 issue 再下結論
+
 ## 2026-03-08 動態 HR 招募：Multimedia-QA-Specialist
 - **觸發原因**：CEO 驗收 Singer MV 發現三大品質問題（非人聲亂動、情緒斷層、品管缺失）
 - **角色**：多媒體品管專家，負責影音管線自動化品質驗收

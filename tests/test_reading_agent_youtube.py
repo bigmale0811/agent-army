@@ -36,7 +36,11 @@ _MOCK_RSS = """<?xml version="1.0" encoding="UTF-8"?>
     </media:group>
   </entry>
 </feed>
-""".format(pub_date=datetime.now().strftime("%Y-%m-%dT%H:%M:%S+00:00"))
+"""
+
+# 模組載入時的日期字串，供 replace 使用
+_MOCK_PUB_DATE = datetime.now().strftime("%Y-%m-%dT%H:%M:%S+00:00")
+_MOCK_RSS = _MOCK_RSS.format(pub_date=_MOCK_PUB_DATE)
 
 _MOCK_CHANNEL = {
     "channel_id": "UCPyR_jfaRH6KN2TOl4AM0uQ",
@@ -73,7 +77,7 @@ class TestYouTubeClient:
             "%Y-%m-%dT%H:%M:%S+00:00"
         )
         old_rss = _MOCK_RSS.replace(
-            datetime.now().strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+            _MOCK_PUB_DATE,
             old_date,
         )
         mock_response = MagicMock()
