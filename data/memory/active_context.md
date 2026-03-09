@@ -1,13 +1,54 @@
 # 🧠 Active Context
-更新：2026-03-09 05:27
+更新：2026-03-10 06:00
 
-## 🏆 Singer Agent V2.0 正式上線！
+## 🏆 Singer Agent V2.1 MuseTalk 整合完成！
 
 ### 🚀 部署狀態
-- ✅ git push 完成 (bb9428f..1e3abb1 master → master)
-- ✅ 舊 Bot (PID 8968/552) 已終止
-- ✅ V2.0 Bot 已啟動 (PID 1332/22376, 05:26:38)
-- 🟢 **V2.0 點唱機已上線，等待 CEO 點歌！**
+- ✅ V2.0 Bot 已啟動（EDTalk 引擎）
+- ✅ **V2.1 MuseTalk 雙引擎整合完成**
+- 🟢 透過 `SINGER_RENDERER=musetalk` 環境變數切換
+
+### ✅ MuseTalk Pipeline 整合 (2026-03-10)
+- ✅ `config.py`: 新增 SINGER_RENDERER / MUSETALK_DIR / MUSETALK_PYTHON / MUSETALK_VERSION
+- ✅ `video_renderer.py`: 新增 `_render_musetalk()` + 雙引擎分派
+- ✅ `test_video_renderer.py`: 新增 11 個 MuseTalk 測試（共 35 測試全過）
+- ✅ `pipeline.py`: 無需修改（render() 簽名不變）
+- 🔑 切換方式：`set SINGER_RENDERER=musetalk` → 啟動 Bot
+
+### ✅ 2026-03-09 清理完成
+- ✅ Stock Analyzer 整個專案已從 repo 移除（commit `4ad6616`，-3477 行）
+- ✅ git push 完成 (b1baef4..4ad6616 master → master)
+
+### ✅ Singer V2.1 MuseTalk PoC — PASS！(2026-03-10)
+- ✅ CUDA Toolkit 12.8 已安裝
+- ✅ musetalk_env (Python 3.10) venv 建立完成
+- ✅ PyTorch 2.10.0+cu128（CUDA 12.8, sm_120）
+- ✅ **mmcv 2.1.0 + CUDA ops 編譯成功**（5 項 patch）
+  - tensorview.h: std::vector overload 改 inline（sm_120 相容）
+  - cudabind.cpp + pybind.cpp: #ifndef MMCV_EXCLUDE_SPCONV
+  - setup.py: -DMMCV_EXCLUDE_SPCONV 編譯旗標
+  - mmcv/ops/__init__.py: try/except 包裹 sparse_conv import
+  - mmdet/__init__.py: mmcv 版本上限放寬至 < 2.2.0
+  - mmengine checkpoint.py + MuseTalk 6 處: torch.load weights_only=False
+- ✅ 模型權重全部到位（V1.5 unet 3.2GB + V1.0 3.2GB + sd-vae + whisper + dwpose + face-parse）
+- ✅ PoC 壓測結果：
+  - **VRAM 峰值：8,258 MB**（安全，離 12GB 紅線還有 ~4GB）
+  - VRAM 增量：7,385 MB
+  - 執行時間：143.8 秒（8 秒影片）
+  - **輸出解析度：704×1216**（EDTalk 僅 256×256）
+  - 推理速度：~9 it/s
+  - 產出：D:\Projects\MuseTalk\results\poc\v15\yongen_yongen.mp4
+- ⚠️ Windows 卡死 Bug（Issue #40）尚未驗證是否影響長影片
+- ⚠️ 與 ComfyUI 並行需 VRAM 時間分割（MuseTalk 7.4GB + SDXL 7-8GB > 12GB）
+- ⏳ 待 CEO 決定：是否用 MuseTalk 取代 EDTalk 作為 V2.1 渲染引擎
+
+### 📦 2026-03-09 全面清理完成
+- ✅ .gitignore 更新：排除執行時資料 + 外部依賴（4 大類）
+- ✅ Stock Analyzer commit：Telegram 通知 + PDF 生成 + 編碼修復
+- ✅ Singer V2.1 文件 commit：emotion dynamics 規劃 + EDTalk 探勘報告 + PoC
+- ✅ 記憶檔案 commit：active_context + decisions + compaction-log
+- ✅ git push 成功（4 commits 一次推上 GitHub）
+- 🟢 **工作目錄乾淨，所有待處理項目已清空**
 
 ### V2.0 EDTalk 整合完成 ✅
 - ✅ video_renderer.py 完整重寫：SadTalker → EDTalk subprocess
@@ -95,12 +136,10 @@
 - Batch B: 路徑穿越防護、完整例外處理、logging
 - Batch E: 路徑穿越(bot)、config 驗證、coroutine 修復、錯誤洩漏、副檔名白名單
 
-## 待處理（Stock Analyzer，未 commit）
-1. `scripts/run_analysis.py` — Telegram 通知 + PDF 生成 + log 修復
-2. `src/stock_analyzer/utils/pdf_report.py` — PDF 報告生成器（新增）
-3. vendor prompts 中文化（6 個檔案）
-4. trader prompt 結構化輸出（跨週金股風格）
-5. ⚠️ 結構化格式需重跑分析才生效
+## 待處理
+- ⏳ vendor prompts 中文化（6 個檔案）— 尚未開始
+- ⏳ trader prompt 結構化輸出（跨週金股風格）— 尚未開始
+- ⚠️ 結構化格式需重跑分析才生效
 
 ## 最近完成
 - ✅ Singer Agent 全部 14 DEV 項目（283 測試，94% 覆蓋率）
@@ -110,8 +149,8 @@
 - ✅ FSM 狀態機 + Kanban 派工系統
 
 ## Git 狀態
-- master 領先 origin/master 多個 commits（未 push）
-- Stock Analyzer 相關檔案仍有未提交修改（run_analysis.py, pdf_report.py）
+- ✅ master 與 origin/master 同步（b1baef4）
+- ✅ 工作目錄乾淨，無未提交修改
 
 ## 🖥️ 硬體火力與絕對限制
 - **顯示卡**：GFX 5070 12GB VRAM

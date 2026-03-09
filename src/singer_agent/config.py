@@ -57,6 +57,16 @@ EDTALK_DEMO_SCRIPT = EDTALK_DIR / "demo_EDTalk_A_using_predefined_exp_weights.py
 # EDTalk 預設姿態影片
 EDTALK_POSE_VIDEO = EDTALK_DIR / "test_data" / "pose_source1.mp4"
 
+# 渲染引擎選擇（edtalk | musetalk）
+SINGER_RENDERER: str = os.environ.get("SINGER_RENDERER", "edtalk")
+
+# MuseTalk 安裝目錄（V2.1 高解析度引擎）
+MUSETALK_DIR = Path(os.environ.get("MUSETALK_DIR", "D:/Projects/MuseTalk"))
+# MuseTalk 虛擬環境 Python（含 torch + cu128 + mmcv）
+MUSETALK_PYTHON = MUSETALK_DIR / "musetalk_env" / "Scripts" / "python.exe"
+# MuseTalk 模型版本（v1 或 v15）
+MUSETALK_VERSION: str = os.environ.get("MUSETALK_VERSION", "v15")
+
 # FFmpeg 執行檔路徑（用於影片靜態合成降級）
 FFMPEG_BIN = Path(os.environ.get("FFMPEG_BIN", "ffmpeg"))
 

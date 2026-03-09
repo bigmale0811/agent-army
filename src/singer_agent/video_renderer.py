@@ -1,20 +1,21 @@
 # -*- coding: utf-8 -*-
 """
-DEV-11: 影片合成模組（V2.0 — EDTalk 引擎）。
+DEV-11: 影片合成模組（V2.1 — EDTalk / MuseTalk 雙引擎）。
 
 VideoRenderer 提供：
-- EDTalk 主路徑（subprocess 呼叫，支援 8 種情緒標籤）
+- EDTalk 路徑（subprocess，8 種情緒，256×256，VRAM ~2.4GB）
+- MuseTalk 路徑（subprocess，高解析度 704×1216，VRAM ~8.2GB）
 - FFmpeg 靜態降級（靜態圖片 + 音訊合成影片）
 - 非 ASCII 路徑自動處理（透過 path_utils）
 
-V2.0 變更：
-- 廢棄 SadTalker，全面改用 EDTalk
-- 情緒控制由 expression_scale → exp_type（8 種原生情緒）
-- VRAM 峰值：~2.4GB（比 SadTalker 的 4-5GB 省 50%）
+V2.1 變更：
+- 新增 MuseTalk 渲染引擎（高解析度對嘴同步）
+- 透過 SINGER_RENDERER 環境變數切換引擎
 """
 import logging
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 from src.singer_agent import config
@@ -25,27 +26,39 @@ _logger = logging.getLogger(__name__)
 
 class VideoRenderer:
     """
-    影片渲染器（V2.0 — EDTalk 引擎）。
+    影片渲染器（V2.1 — EDTalk / MuseTalk 雙引擎）。
 
-    主路徑：EDTalk 對嘴動畫（支援情緒標籤）。
+    主路徑：由 SINGER_RENDERER 環境變數決定渲染引擎。
     降級路徑：FFmpeg 靜態圖片迴圈 + 音訊合成。
 
     Args:
         edtalk_dir: EDTalk 安裝目錄
+        musetalk_dir: MuseTalk 安裝目錄
         ffmpeg_bin: FFmpeg 執行檔路徑
+        renderer: 渲染引擎選擇（"edtalk" 或 "musetalk"）
     """
 
     def __init__(
         self,
         edtalk_dir: Path | None = None,
+        musetalk_dir: Path | None = None,
         ffmpeg_bin: Path | None = None,
+        renderer: str | None = None,
     ) -> None:
+        # 渲染引擎選擇
+        self.renderer = renderer or config.SINGER_RENDERER
+
+        # EDTalk 設定
         self.edtalk_dir = edtalk_dir or config.EDTALK_DIR
         self.ffmpeg_bin = ffmpeg_bin or config.FFMPEG_BIN
-        # EDTalk 使用自己的 venv（含 torch cu128）
         self._edtalk_python = config.EDTALK_PYTHON
         self._edtalk_demo = config.EDTALK_DEMO_SCRIPT
         self._pose_video = config.EDTALK_POSE_VIDEO
+
+        # MuseTalk 設定
+        self.musetalk_dir = musetalk_dir or config.MUSETALK_DIR
+        self._musetalk_python = config.MUSETALK_PYTHON
+        self._musetalk_version = config.MUSETALK_VERSION
 
     # EDTalk 推論超時（秒）
     _RENDER_TIMEOUT: int = 600
@@ -80,7 +93,14 @@ class VideoRenderer:
             output_path.write_bytes(b"\x00" * 100)
             return output_path, "dry_run"
 
-        # EDTalk 主路徑
+        # 根據渲染引擎分派
+        if self.renderer == "musetalk":
+            return self._render_musetalk(
+                composite_image, audio_path, output_path,
+                exp_type=exp_type,
+            )
+
+        # EDTalk 主路徑（預設）
         return self._render_edtalk(
             composite_image, audio_path, output_path,
             exp_type=exp_type,
@@ -204,6 +224,138 @@ class VideoRenderer:
         force_cleanup()
         log_vram("EDTalk 啟動前")
         check_vram_safety("EDTalk 啟動前")
+
+    def _render_musetalk(
+        self,
+        composite_image: Path,
+        audio_path: Path,
+        output_path: Path,
+        exp_type: str = "neutral",
+    ) -> tuple[Path, str]:
+        """
+        透過 MuseTalk subprocess 渲染高解析度對嘴動畫。
+
+        MuseTalk 特點：
+        - 高解析度輸出（704×1216 vs EDTalk 的 256×256）
+        - VRAM ~8.2GB（需確保 ComfyUI 已卸載）
+        - 不支援情緒標籤（exp_type 僅記錄，不影響渲染）
+        """
+        _logger.info(
+            "開始 MuseTalk 渲染（version=%s, exp_type=%s 不影響渲染）",
+            self._musetalk_version, exp_type,
+        )
+        if exp_type != "neutral":
+            _logger.warning(
+                "MuseTalk 不支援情緒控制，exp_type='%s' 將被忽略", exp_type,
+            )
+
+        # 前置 VRAM 清理（MuseTalk 需要更多 VRAM）
+        self._pre_launch_cleanup()
+
+        # 處理非 ASCII 路徑
+        ascii_img = to_ascii_temp(composite_image)
+        ascii_audio = to_ascii_temp(audio_path)
+
+        # 建立暫存輸出目錄
+        result_dir = Path(tempfile.mkdtemp(prefix="musetalk_"))
+
+        try:
+            # 檢查 MuseTalk 環境
+            if not self._musetalk_python.exists():
+                raise FileNotFoundError(
+                    f"MuseTalk venv Python 不存在：{self._musetalk_python}"
+                )
+
+            # 產生 MuseTalk inference YAML 配置
+            yaml_config = result_dir / "inference_config.yaml"
+            yaml_content = (
+                f"singer_task:\n"
+                f'  video_path: "{ascii_img}"\n'
+                f'  audio_path: "{ascii_audio}"\n'
+            )
+            yaml_config.write_text(yaml_content, encoding="utf-8")
+
+            # MuseTalk 模型路徑（根據版本）
+            model_paths = {
+                "v15": {
+                    "unet_model_path": "./models/musetalkV15/unet.pth",
+                    "unet_config": "./models/musetalkV15/musetalk.json",
+                },
+                "v1": {
+                    "unet_model_path": "./models/musetalk/pytorch_model.bin",
+                    "unet_config": "./models/musetalk/musetalk.json",
+                },
+            }
+            model_cfg = model_paths.get(
+                self._musetalk_version, model_paths["v15"],
+            )
+
+            cmd = [
+                str(self._musetalk_python),
+                "-m", "scripts.inference",
+                "--inference_config", str(yaml_config),
+                "--unet_model_path", model_cfg["unet_model_path"],
+                "--unet_config", model_cfg["unet_config"],
+                "--version", self._musetalk_version,
+                "--result_dir", str(result_dir),
+                "--batch_size", "4",
+                "--use_float16",
+            ]
+
+            _logger.info("MuseTalk 命令：%s", " ".join(cmd))
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=self._RENDER_TIMEOUT,
+                cwd=str(self.musetalk_dir),
+            )
+
+            if result.returncode != 0:
+                _logger.error(
+                    "MuseTalk 推論失敗（exit=%d）：%s",
+                    result.returncode,
+                    result.stderr[-500:] if result.stderr else "無 stderr",
+                )
+                raise RuntimeError(
+                    f"MuseTalk 推論失敗（exit={result.returncode}）"
+                )
+
+            # 尋找產出 MP4（MuseTalk 存在 result_dir/<version>/ 下）
+            mp4_files = list(result_dir.rglob("*.mp4"))
+            if not mp4_files:
+                raise RuntimeError(
+                    f"MuseTalk 未產出影片（搜尋：{result_dir}）"
+                )
+
+            musetalk_output = mp4_files[0]
+            _logger.info("MuseTalk 產出：%s", musetalk_output)
+
+            # 搬移到目標路徑
+            if output_path.exists():
+                output_path.unlink()
+            shutil.move(str(musetalk_output), str(output_path))
+
+            size_mb = output_path.stat().st_size / (1024 ** 2)
+            _logger.info(
+                "MuseTalk 渲染完成：%s（%.2f MB）",
+                output_path, size_mb,
+            )
+            return output_path, "musetalk"
+
+        except subprocess.TimeoutExpired:
+            _logger.error("MuseTalk 推論超時（>%ds）", self._RENDER_TIMEOUT)
+            raise RuntimeError(
+                f"MuseTalk 推論超時（>{self._RENDER_TIMEOUT}s）"
+            )
+
+        finally:
+            # 清理暫存檔案
+            cleanup_temp(ascii_img)
+            cleanup_temp(ascii_audio)
+            # 清理暫存輸出目錄（忽略錯誤）
+            shutil.rmtree(str(result_dir), ignore_errors=True)
 
     def _render_ffmpeg(
         self,
