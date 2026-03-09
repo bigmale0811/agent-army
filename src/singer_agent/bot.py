@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-DEV-14: Telegram Bot 入口模組。
+DEV-14: Telegram Bot 入口模組（V2.1 — 支援動態角色圖片）。
 
 提供 Singer Agent 的 Telegram Bot 介面：
 - 授權閘門：只允許 ALLOWED_USER_IDS 內的使用者操作
 - /start：歡迎訊息與使用說明
 - /list：列出已儲存的專案
+- 圖片處理：接收角色照片，暫存供下一次 MP3 使用
 - MP3 音訊處理：接收音檔、排入佇列、啟動管線
 - asyncio.Queue 任務排隊機制
 - 進度回調：管線執行時回報步驟進度給使用者
@@ -55,7 +56,12 @@ _job_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 - chat_id: int — 回報進度的 Telegram chat ID
 - file_path: str — 下載後的音訊檔案路徑
 - file_name: str — 原始檔名
+- character_image: str | None — 使用者指定的角色圖片路徑（None 時用預設）
 """
+
+# 每位使用者的暫存角色圖片（user_id → 圖片路徑）
+# 使用者傳送圖片後暫存，下一次傳 MP3 時自動使用並清除
+_user_photos: dict[int, Path] = {}
 
 
 # ─────────────────────────────────────────────────
@@ -134,7 +140,8 @@ async def start_command(update: Any, context: Any) -> None:
 
     welcome = (
         f"🎤 歡迎 {user_name}！我是 Singer Agent Bot。\n\n"
-        f"📤 傳送 MP3 音訊檔案給我，我會自動產出 MV。\n"
+        f"🖼️ 先傳一張角色照片（正面人臉），再傳 MP3\n"
+        f"📤 或直接傳 MP3，會使用預設角色圖片\n"
         f"📋 /list — 查看已完成的專案\n"
         f"❓ /help — 查看使用說明"
     )
@@ -185,6 +192,88 @@ async def list_command(update: Any, context: Any) -> None:
         )
 
     await update.message.reply_text("\n".join(lines))
+
+
+# ─────────────────────────────────────────────────
+# 角色圖片處理
+# ─────────────────────────────────────────────────
+
+# 圖片副檔名白名單
+_PHOTO_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+
+
+async def photo_handler(update: Any, context: Any) -> None:
+    """
+    處理使用者傳送的圖片（角色照片）。
+
+    流程：
+    1. 授權檢查
+    2. 下載圖片到 INBOX_DIR/photos/
+    3. 暫存到 _user_photos[user_id]
+    4. 回覆確認，提示使用者接著傳 MP3
+
+    支援兩種來源：
+    - Telegram 壓縮圖片（filters.PHOTO）→ 取最大尺寸
+    - 以檔案形式傳送的圖片（filters.Document.IMAGE）→ 原圖
+    """
+    user_id = update.effective_user.id
+
+    if not is_authorized(user_id):
+        await update.message.reply_text(
+            f"⛔ 未授權：您的 ID ({user_id}) 不在允許清單中。"
+        )
+        return
+
+    # 判斷來源：壓縮圖片 vs 檔案圖片
+    if update.message.photo:
+        # Telegram 壓縮圖片：取最大尺寸（最後一個）
+        photo_obj = update.message.photo[-1]
+        file_id = photo_obj.file_id
+        safe_name = f"avatar_{user_id}.jpg"
+    elif update.message.document:
+        doc = update.message.document
+        mime = getattr(doc, "mime_type", "") or ""
+        if not mime.startswith("image/"):
+            await update.message.reply_text("❌ 請傳送圖片檔案（JPG / PNG）。")
+            return
+        file_id = doc.file_id
+        raw_name = Path(doc.file_name or "avatar.png").name
+        safe_name = re.sub(r"[^\w\-.]", "_", raw_name)
+        # 檢查副檔名
+        if Path(safe_name).suffix.lower() not in _PHOTO_EXTENSIONS:
+            await update.message.reply_text("❌ 僅接受 JPG / PNG / WebP 格式圖片。")
+            return
+    else:
+        await update.message.reply_text("❌ 無法辨識圖片，請重新傳送。")
+        return
+
+    # 下載圖片
+    photos_dir = config.INBOX_DIR / "photos"
+    photos_dir.mkdir(parents=True, exist_ok=True)
+    dest_path = (photos_dir / safe_name).resolve()
+
+    # 【安全】路徑穿越防護
+    if not str(dest_path).startswith(str(photos_dir.resolve())):
+        await update.message.reply_text("❌ 非法檔名，拒絕處理。")
+        return
+
+    try:
+        tg_file = await context.bot.get_file(file_id)
+        await tg_file.download_to_drive(str(dest_path))
+    except Exception as exc:
+        _logger.error("下載圖片失敗（user_id=%d）：%s", user_id, exc)
+        await update.message.reply_text("❌ 下載圖片失敗，請稍後再試。")
+        return
+
+    # 暫存到 _user_photos
+    _user_photos[user_id] = dest_path
+    _logger.info("使用者 %d 上傳角色圖片：%s", user_id, dest_path)
+
+    await update.message.reply_text(
+        f"✅ 已收到角色圖片！\n"
+        f"📤 現在請傳送 MP3 音訊，我會用這張圖片製作 MV。\n"
+        f"💡 如果不傳圖片直接發 MP3，會使用預設角色。"
+    )
 
 
 # ─────────────────────────────────────────────────
@@ -251,20 +340,26 @@ async def audio_handler(update: Any, context: Any) -> None:
     # 擷取 caption 作為情緒/曲風提示（V2.0 EDTalk 情緒控制）
     caption = (update.message.caption or "").strip()
 
+    # 檢查是否有暫存的角色圖片（使用後清除）
+    user_id_for_photo = update.effective_user.id
+    user_photo = _user_photos.pop(user_id_for_photo, None)
+
     # 放入任務佇列
     job = {
         "chat_id": update.effective_chat.id,
         "file_path": str(dest_path),
         "file_name": safe_name,
         "caption": caption,
+        "character_image": str(user_photo) if user_photo else None,
     }
     await _job_queue.put(job)
 
-    # 回覆確認訊息（含情緒提示回顯）
+    # 回覆確認訊息（含圖片與情緒提示回顯）
+    photo_info = "\n🖼️ 使用你傳的角色圖片" if user_photo else "\n🖼️ 使用預設角色圖片"
     mood_info = f"\n🎭 情緒提示：{caption}" if caption else ""
     await update.message.reply_text(
         f"✅ 已收到 {safe_name}，已排入處理佇列"
-        f"（目前排隊數：{_job_queue.qsize()}）{mood_info}"
+        f"（目前排隊數：{_job_queue.qsize()}）{photo_info}{mood_info}"
     )
 
 
@@ -369,6 +464,7 @@ async def worker(bot: Any) -> None:
         file_path: str = job["file_path"]
         file_name: str = job["file_name"]
         caption: str = job.get("caption", "")
+        custom_image: str | None = job.get("character_image")
 
         _logger.info(
             "Worker 取得任務：%s（chat_id=%d, caption=%r）",
@@ -397,9 +493,12 @@ async def worker(bot: Any) -> None:
                 mood_hint=caption,
             )
 
+            # 使用者自訂圖片優先，否則用 config 預設
+            char_img = Path(custom_image) if custom_image else config.CHARACTER_IMAGE
+
             progress_cb = make_progress_callback(bot, chat_id)
             pipeline = Pipeline(
-                character_image=config.CHARACTER_IMAGE,
+                character_image=char_img,
                 progress_callback=progress_cb,
                 dry_run=False,
             )
@@ -502,6 +601,11 @@ def create_application() -> Any:
     # 註冊指令處理器
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("list", list_command))
+
+    # 註冊圖片處理器（壓縮圖片 + 檔案圖片）
+    app.add_handler(MessageHandler(
+        filters.PHOTO | filters.Document.IMAGE, photo_handler,
+    ))
 
     # 註冊音訊處理器（接受 audio 類型的訊息）
     app.add_handler(MessageHandler(filters.AUDIO, audio_handler))

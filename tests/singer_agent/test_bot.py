@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-DEV-14: bot.py 測試。
+DEV-14: bot.py 測試（V2.1 — 支援動態角色圖片）。
 
 測試覆蓋：
 - 授權閘門（ALLOWED_USER_IDS 過濾）
 - /start 指令
 - /list 指令（列出專案）
+- 圖片處理（角色照片暫存 + 副檔名白名單）
+- 圖片 + MP3 整合流程（先傳圖再傳 MP3 / 直接傳 MP3）
 - MP3 音訊處理
 - asyncio.Queue 任務排隊
 - 進度回調
@@ -245,6 +247,252 @@ class TestListCommand:
 
         call_text = update.message.reply_text.call_args[0][0]
         assert "未授權" in call_text or "授權" in call_text
+
+
+# ─────────────────────────────────────────────────
+# 輔助工具：建立 mock Telegram Photo Update
+# ─────────────────────────────────────────────────
+
+def _make_photo_update(
+    user_id: int = 12345,
+    chat_id: int = 12345,
+    file_id: str = "photo_abc123",
+    as_document: bool = False,
+    doc_file_name: str = "avatar.png",
+    doc_mime_type: str = "image/png",
+) -> MagicMock:
+    """建立帶有圖片的 mock Update。
+
+    Args:
+        as_document: True 時模擬以檔案形式傳送的圖片
+    """
+    update = _make_update(user_id=user_id, chat_id=chat_id)
+
+    if as_document:
+        # 以檔案形式傳送的圖片
+        update.message.photo = []
+        doc = MagicMock()
+        doc.file_id = file_id
+        doc.file_name = doc_file_name
+        doc.mime_type = doc_mime_type
+        update.message.document = doc
+    else:
+        # Telegram 壓縮圖片
+        photo_small = MagicMock()
+        photo_small.file_id = "small_id"
+        photo_large = MagicMock()
+        photo_large.file_id = file_id
+        update.message.photo = [photo_small, photo_large]
+        update.message.document = None
+
+    update.message.caption = None
+    return update
+
+
+# ─────────────────────────────────────────────────
+# 測試類別：圖片處理
+# ─────────────────────────────────────────────────
+
+class TestPhotoHandler:
+    """測試角色圖片接收處理（V2.1）。"""
+
+    @pytest.mark.asyncio
+    @patch("src.singer_agent.bot.config")
+    async def test_photo_unauthorized_rejected(self, mock_config):
+        """未授權使用者傳圖片被拒絕。"""
+        from src.singer_agent.bot import photo_handler
+        mock_config.ALLOWED_USER_IDS = [99999]
+
+        update = _make_photo_update(user_id=11111)
+        context = _make_context()
+
+        await photo_handler(update, context)
+
+        call_text = update.message.reply_text.call_args[0][0]
+        assert "未授權" in call_text
+
+    @pytest.mark.asyncio
+    @patch("src.singer_agent.bot.config")
+    async def test_photo_saved_to_user_photos(self, mock_config, tmp_path):
+        """已授權使用者傳圖片，暫存到 _user_photos。"""
+        from src.singer_agent import bot
+        from src.singer_agent.bot import photo_handler
+
+        mock_config.ALLOWED_USER_IDS = [12345]
+        mock_config.INBOX_DIR = tmp_path / "inbox"
+
+        update = _make_photo_update(user_id=12345)
+        context = _make_context()
+
+        mock_file = AsyncMock()
+        mock_file.download_to_drive = AsyncMock()
+        context.bot.get_file = AsyncMock(return_value=mock_file)
+
+        # 清除可能殘留的測試資料
+        bot._user_photos.pop(12345, None)
+
+        await photo_handler(update, context)
+
+        # 驗證暫存
+        assert 12345 in bot._user_photos
+        assert "avatar_12345" in bot._user_photos[12345].name
+
+        # 驗證回覆
+        call_text = update.message.reply_text.call_args[0][0]
+        assert "已收到" in call_text and "MP3" in call_text
+
+        # 清理
+        bot._user_photos.pop(12345, None)
+
+    @pytest.mark.asyncio
+    @patch("src.singer_agent.bot.config")
+    async def test_photo_document_accepted(self, mock_config, tmp_path):
+        """以檔案形式傳送的圖片也能被接受。"""
+        from src.singer_agent import bot
+        from src.singer_agent.bot import photo_handler
+
+        mock_config.ALLOWED_USER_IDS = [12345]
+        mock_config.INBOX_DIR = tmp_path / "inbox"
+
+        update = _make_photo_update(
+            user_id=12345, as_document=True,
+            doc_file_name="my_face.png", doc_mime_type="image/png",
+        )
+        context = _make_context()
+
+        mock_file = AsyncMock()
+        mock_file.download_to_drive = AsyncMock()
+        context.bot.get_file = AsyncMock(return_value=mock_file)
+
+        bot._user_photos.pop(12345, None)
+
+        await photo_handler(update, context)
+
+        assert 12345 in bot._user_photos
+        bot._user_photos.pop(12345, None)
+
+    @pytest.mark.asyncio
+    @patch("src.singer_agent.bot.config")
+    async def test_photo_invalid_extension_rejected(self, mock_config, tmp_path):
+        """非圖片副檔名被拒絕。"""
+        from src.singer_agent.bot import photo_handler
+
+        mock_config.ALLOWED_USER_IDS = [12345]
+        mock_config.INBOX_DIR = tmp_path / "inbox"
+
+        update = _make_photo_update(
+            user_id=12345, as_document=True,
+            doc_file_name="malware.exe", doc_mime_type="image/png",
+        )
+        context = _make_context()
+
+        await photo_handler(update, context)
+
+        call_text = update.message.reply_text.call_args[0][0]
+        assert "JPG" in call_text or "PNG" in call_text
+
+    @pytest.mark.asyncio
+    @patch("src.singer_agent.bot.config")
+    async def test_photo_non_image_document_rejected(self, mock_config, tmp_path):
+        """非圖片 MIME 類型被拒絕。"""
+        from src.singer_agent.bot import photo_handler
+
+        mock_config.ALLOWED_USER_IDS = [12345]
+        mock_config.INBOX_DIR = tmp_path / "inbox"
+
+        update = _make_photo_update(
+            user_id=12345, as_document=True,
+            doc_file_name="report.pdf", doc_mime_type="application/pdf",
+        )
+        context = _make_context()
+
+        await photo_handler(update, context)
+
+        call_text = update.message.reply_text.call_args[0][0]
+        assert "圖片" in call_text
+
+
+class TestPhotoAudioIntegration:
+    """測試圖片 + MP3 整合流程（V2.1）。"""
+
+    @pytest.mark.asyncio
+    @patch("src.singer_agent.bot.config")
+    async def test_audio_uses_user_photo(self, mock_config, tmp_path):
+        """傳圖片後再傳 MP3，job 內包含 character_image。"""
+        from src.singer_agent import bot
+        from src.singer_agent.bot import audio_handler
+
+        mock_config.ALLOWED_USER_IDS = [12345]
+        mock_config.INBOX_DIR = tmp_path / "inbox"
+
+        # 模擬先傳了圖片（直接寫入 _user_photos）
+        fake_photo = tmp_path / "avatar.png"
+        fake_photo.write_bytes(b"\x89PNG")
+        bot._user_photos[12345] = fake_photo
+
+        original_queue = bot._job_queue
+        test_queue = asyncio.Queue()
+        bot._job_queue = test_queue
+
+        try:
+            update = _make_audio_update(user_id=12345)
+            context = _make_context()
+
+            mock_file = AsyncMock()
+            mock_file.download_to_drive = AsyncMock()
+            context.bot.get_file = AsyncMock(return_value=mock_file)
+
+            await audio_handler(update, context)
+
+            # 確認 job 有 character_image
+            job = await test_queue.get()
+            assert job["character_image"] == str(fake_photo)
+
+            # 確認 _user_photos 已清除（用後即刪）
+            assert 12345 not in bot._user_photos
+
+            # 確認回覆包含自訂圖片提示
+            call_text = update.message.reply_text.call_args[0][0]
+            assert "你傳的" in call_text or "角色圖片" in call_text
+        finally:
+            bot._job_queue = original_queue
+            bot._user_photos.pop(12345, None)
+
+    @pytest.mark.asyncio
+    @patch("src.singer_agent.bot.config")
+    async def test_audio_without_photo_uses_default(self, mock_config, tmp_path):
+        """沒傳圖片直接發 MP3，job 的 character_image 為 None。"""
+        from src.singer_agent import bot
+        from src.singer_agent.bot import audio_handler
+
+        mock_config.ALLOWED_USER_IDS = [12345]
+        mock_config.INBOX_DIR = tmp_path / "inbox"
+
+        # 確保沒有暫存圖片
+        bot._user_photos.pop(12345, None)
+
+        original_queue = bot._job_queue
+        test_queue = asyncio.Queue()
+        bot._job_queue = test_queue
+
+        try:
+            update = _make_audio_update(user_id=12345)
+            context = _make_context()
+
+            mock_file = AsyncMock()
+            mock_file.download_to_drive = AsyncMock()
+            context.bot.get_file = AsyncMock(return_value=mock_file)
+
+            await audio_handler(update, context)
+
+            job = await test_queue.get()
+            assert job["character_image"] is None
+
+            # 確認回覆包含預設圖片提示
+            call_text = update.message.reply_text.call_args[0][0]
+            assert "預設" in call_text
+        finally:
+            bot._job_queue = original_queue
 
 
 # ─────────────────────────────────────────────────
