@@ -20,10 +20,12 @@ Stock Analyzer 獨立執行腳本
 import argparse
 import json
 import os
-import signal
 import sys
 import time
 import traceback
+import urllib.request
+import urllib.parse
+from typing import Optional
 from datetime import datetime
 from pathlib import Path
 
@@ -31,12 +33,225 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
+# 載入 .env 環境變數
+try:
+    from dotenv import load_dotenv
+    load_dotenv(PROJECT_ROOT / ".env")
+except ImportError:
+    pass  # 無 dotenv 時依賴系統環境變數
+
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+
+# Windows CP950 console 無法顯示 emoji，強制使用 UTF-8 stdout/stderr
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 REPORTS_DIR = PROJECT_ROOT / "reports"
 STATUS_DIR = REPORTS_DIR / ".status"
 LOCKS_DIR = REPORTS_DIR / ".locks"
 LOG_DIR = REPORTS_DIR / ".logs"
+
+
+# === Telegram 通知 ===
+
+def _telegram_send_message(text: str) -> bool:
+    """透過 Telegram Bot API 發送文字訊息（最大 4096 字元）"""
+    token = os.getenv("STOCK_BOT_TOKEN", "")
+    chat_id = os.getenv("STOCK_CHAT_ID", "")
+    if not token or not chat_id:
+        print("⚠️ STOCK_BOT_TOKEN 或 STOCK_CHAT_ID 未設定，跳過 Telegram 通知")
+        return False
+
+    # Telegram 訊息上限 4096 字元，超過則截斷
+    if len(text) > 4000:
+        text = text[:3950] + "\n\n⋯（訊息過長，已截斷。完整報告見附件）"
+
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    data = urllib.parse.urlencode({
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "Markdown",
+    }).encode("utf-8")
+
+    try:
+        req = urllib.request.Request(url, data=data)
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return resp.status == 200
+    except Exception as e:
+        print(f"⚠️ Telegram 發送訊息失敗: {e}")
+        return False
+
+
+def _telegram_send_document(file_path: Path, caption: str = "") -> bool:
+    """透過 Telegram Bot API 發送檔案（完整 .md 報告）"""
+    token = os.getenv("STOCK_BOT_TOKEN", "")
+    chat_id = os.getenv("STOCK_CHAT_ID", "")
+    if not token or not chat_id:
+        return False
+
+    url = f"https://api.telegram.org/bot{token}/sendDocument"
+
+    # 手動建構 multipart/form-data（不依賴 requests 套件）
+    boundary = "----StockAnalyzerBoundary"
+    body = b""
+
+    # chat_id 欄位
+    body += f"--{boundary}\r\n".encode()
+    body += b"Content-Disposition: form-data; name=\"chat_id\"\r\n\r\n"
+    body += f"{chat_id}\r\n".encode()
+
+    # caption 欄位
+    if caption:
+        # 截斷 caption（Telegram 限制 1024 字元）
+        cap = caption[:1000] if len(caption) > 1000 else caption
+        body += f"--{boundary}\r\n".encode()
+        body += b"Content-Disposition: form-data; name=\"caption\"\r\n\r\n"
+        body += f"{cap}\r\n".encode()
+
+    # document 欄位（檔案）
+    file_content = file_path.read_bytes()
+    body += f"--{boundary}\r\n".encode()
+    body += (
+        f'Content-Disposition: form-data; name="document"; '
+        f'filename="{file_path.name}"\r\n'
+    ).encode()
+    body += b"Content-Type: text/markdown\r\n\r\n"
+    body += file_content + b"\r\n"
+    body += f"--{boundary}--\r\n".encode()
+
+    try:
+        req = urllib.request.Request(
+            url,
+            data=body,
+            headers={
+                "Content-Type": f"multipart/form-data; boundary={boundary}",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.status == 200
+    except Exception as e:
+        print(f"⚠️ Telegram 發送檔案失敗: {e}")
+        return False
+
+
+def notify_analysis_complete(
+    display_name: str,
+    ticker: str,
+    date: str,
+    elapsed_sec: float,
+    report_file: Path,
+    report: object = None,
+) -> None:
+    """
+    分析完成後，生成 PDF 報告並透過 Telegram 發送。
+
+    結構：摘要訊息 → PDF 附件（封面 → 重點摘要 → 正式內容）
+    """
+    # 1. 發送結構化摘要（從 final_decision 提取重點）
+    decision_text = ""
+    if report is not None:
+        decision_text = getattr(report, "final_decision", "") or ""
+    elif report_file.exists():
+        import re as _re
+        _content = report_file.read_text(encoding="utf-8")
+        _m = _re.search(r"## 🎯.*?\n(.*?)(?=\Z)", _content, _re.DOTALL)
+        decision_text = _m.group(1).strip() if _m else ""
+
+    if decision_text and len(decision_text) > 20:
+        # 最終決策已包含結構化格式，直接發送
+        header = f"✨ {display_name} 分析報告 ✨\n推薦日期：{date}\n{'─' * 20}\n"
+        _telegram_send_message(header + decision_text)
+    else:
+        # fallback：基本摘要
+        _telegram_send_message(
+            f"📊 {display_name} 分析完成\n📅 {date} | ⏱ {elapsed_sec:.0f}秒"
+        )
+    _telegram_send_message("完整分析 PDF 如下 👇")
+
+    # 2. 生成 PDF 並發送
+    try:
+        from stock_analyzer.utils.pdf_report import generate_pdf_report
+
+        # 從 report 物件取得各段落，或從 .md 檔案解析
+        if report is not None:
+            pdf_path = generate_pdf_report(
+                display_name=display_name,
+                ticker=ticker,
+                date=date,
+                elapsed_sec=elapsed_sec,
+                market_report=getattr(report, "market_report", "") or "",
+                news_report=getattr(report, "news_report", "") or "",
+                fundamentals_report=getattr(report, "fundamentals_report", "") or "",
+                sentiment_report=getattr(report, "sentiment_report", "") or "",
+                investment_plan=getattr(report, "investment_plan", "") or "",
+                final_decision=getattr(report, "final_decision", "") or "",
+            )
+        else:
+            # 從 .md 檔案解析各段落
+            sections = _parse_md_sections(report_file)
+            pdf_path = generate_pdf_report(
+                display_name=display_name,
+                ticker=ticker,
+                date=date,
+                elapsed_sec=elapsed_sec,
+                **sections,
+            )
+
+        _telegram_send_document(pdf_path, caption=f"{display_name} - {date}")
+        print(f"📄 PDF 報告已發送：{pdf_path}")
+
+    except Exception as e:
+        print(f"⚠️ PDF 生成失敗: {e}")
+        # fallback：發送原始 .md 檔
+        _telegram_send_document(report_file, caption=f"{display_name} - {date}")
+
+
+def _parse_md_sections(report_file: Path) -> dict:
+    """從 .md 報告檔案解析出各段落內容"""
+    import re
+    content = report_file.read_text(encoding="utf-8")
+
+    def _extract(pattern: str) -> str:
+        match = re.search(pattern, content, re.DOTALL)
+        return match.group(1).strip() if match else ""
+
+    return {
+        "market_report": _extract(
+            r"## 📈.*?\n(.*?)(?=\n## [📰💰😊📋🎯]|\Z)"
+        ),
+        "news_report": _extract(
+            r"## 📰.*?\n(.*?)(?=\n## [💰😊📋🎯]|\Z)"
+        ),
+        "fundamentals_report": _extract(
+            r"## 💰.*?\n(.*?)(?=\n## [😊📋🎯]|\Z)"
+        ),
+        "sentiment_report": _extract(
+            r"## 😊.*?\n(.*?)(?=\n## [📋🎯]|\Z)"
+        ),
+        "investment_plan": _extract(
+            r"## 📋.*?\n(.*?)(?=\n## 🎯|\Z)"
+        ),
+        "final_decision": _extract(
+            r"## 🎯.*?\n(.*?)(?=\Z)"
+        ),
+    }
+
+
+def notify_analysis_error(
+    display_name: str,
+    ticker: str,
+    date: str,
+    error_msg: str,
+) -> None:
+    """分析失敗時，發送錯誤通知至 Telegram"""
+    text = (
+        f"❌ *{display_name}* 分析失敗\n\n"
+        f"📅 日期：{date}\n"
+        f"🏷 代號：`{ticker}`\n"
+        f"💥 錯誤：`{error_msg[:500]}`"
+    )
+    _telegram_send_message(text)
 
 
 # === PID Lock 機制（防重複啟動） ===
@@ -91,7 +306,12 @@ def acquire_lock(ticker: str) -> bool:
             # lock 檔內容損壞，直接覆蓋
             print(f"🔓 清除 {ticker} 的損壞 lock 檔")
 
-    lock_file.write_text(str(os.getpid()))
+    # NOTE: Non-atomic check-then-write; acceptable for single-orchestrator use.
+    try:
+        lock_file.write_text(str(os.getpid()))
+    except OSError as e:
+        print(f"❌ 無法寫入 lock 檔 {ticker}: {e}")
+        return False
     return True
 
 
@@ -253,15 +473,26 @@ def run_single_analysis(ticker_input: str, date: str) -> bool:
                      detail=f"分析完成！耗時 {final_elapsed:.1f} 秒。報告：{report_file.name}",
                      elapsed=final_elapsed)
 
-        # 寫 log
-        log_file.write_text(
-            f"[{datetime.now().isoformat()}] {resolved.ticker} 分析完成，"
-            f"耗時 {final_elapsed:.1f} 秒\n",
-            encoding="utf-8",
-        )
+        # 寫 log（append 模式，避免覆蓋 stdout 重導向的分析內容）
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(
+                f"\n[{datetime.now().isoformat()}] {resolved.ticker} 分析完成，"
+                f"耗時 {final_elapsed:.1f} 秒\n"
+            )
 
         print(f"\n✅ 分析完成！耗時 {final_elapsed:.1f} 秒")
         print(f"   報告已儲存：{report_file}")
+
+        # 透過 Telegram 推送 PDF 報告
+        notify_analysis_complete(
+            display_name=resolved.display_name,
+            ticker=resolved.ticker,
+            date=date,
+            elapsed_sec=final_elapsed,
+            report_file=report_file,
+            report=report,
+        )
+
         return True
 
     except Exception as e:
@@ -270,15 +501,24 @@ def run_single_analysis(ticker_input: str, date: str) -> bool:
         write_status(resolved.ticker, date, "error",
                      step="error", detail=error_msg, elapsed=elapsed())
 
-        # 寫 log（含完整 traceback）
-        log_file.write_text(
-            f"[{datetime.now().isoformat()}] {resolved.ticker} 分析失敗\n"
-            f"{full_trace}\n",
-            encoding="utf-8",
-        )
+        # 寫 log（append 模式，保留 stdout 重導向的分析內容）
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(
+                f"\n[{datetime.now().isoformat()}] {resolved.ticker} 分析失敗\n"
+                f"{full_trace}\n"
+            )
 
         print(f"\n❌ 分析失敗：{e}")
         traceback.print_exc()
+
+        # 透過 Telegram 通知失敗
+        notify_analysis_error(
+            display_name=resolved.display_name,
+            ticker=resolved.ticker,
+            date=date,
+            error_msg=error_msg,
+        )
+
         return False
 
     finally:
@@ -287,7 +527,7 @@ def run_single_analysis(ticker_input: str, date: str) -> bool:
 
 # === 狀態查詢 ===
 
-def check_status(ticker: str = None):
+def check_status(ticker: Optional[str] = None) -> None:
     """查詢所有或特定標的的分析狀態"""
     if not STATUS_DIR.exists():
         print("尚無任何分析任務。")
@@ -303,7 +543,11 @@ def check_status(ticker: str = None):
     print(f"{'='*60}\n")
 
     for sf in status_files:
-        data = json.loads(sf.read_text(encoding="utf-8"))
+        try:
+            data = json.loads(sf.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"  [corrupt] {sf.name}: {e}")
+            continue
         if ticker and ticker.upper() not in data["ticker"].upper():
             continue
 
@@ -334,8 +578,11 @@ def clean_status():
     for d in [STATUS_DIR, LOCKS_DIR]:
         if d.exists():
             for f in d.iterdir():
-                f.unlink()
-                removed += 1
+                try:
+                    f.unlink()
+                    removed += 1
+                except OSError as e:
+                    print(f"  ⚠️ 無法刪除 {f.name}: {e}")
     print(f"已清除 {removed} 個狀態/lock 檔案。")
 
 
