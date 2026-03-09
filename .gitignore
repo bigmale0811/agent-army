@@ -43,4 +43,28 @@ eval_results/
 # 分析狀態與鎖定檔（執行時產生）
 reports/.status/
 reports/.locks/
-reports/.logs/AAPL_verify_*
+reports/.logs/
+
+# 生成的分析報告（執行時產出）
+reports/*.pdf
+reports/*.md
+
+# Singer Agent 執行時資料
+data/singer_agent/projects/
+data/singer_agent/poc_edtalk/
+
+# Stock Analyzer 執行時資料
+data/stock_analyzer/
+
+# 外部專案 / 第三方依賴（git clone，不追蹤）
+ProjectsEDTalk/
+gfpgan/
+
+# 執行時日誌
+logs/
+
+# 測試輸入素材（本地使用，不進 git）
+test_inputs/
+
+# PoC 腳本產出
+scripts/poc/output/
