@@ -89,6 +89,20 @@ class Pipeline:
         Returns:
             ProjectState（completed 或 failed）
         """
+        # HIGH-04 修復：音訊路徑驗證（副檔名 + 存在性）
+        _ALLOWED_AUDIO_EXTS: set[str] = {
+            ".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a", ".wma",
+        }
+        audio_ext = request.audio_path.suffix.lower()
+        if audio_ext not in _ALLOWED_AUDIO_EXTS:
+            raise ValueError(
+                f"不支援的音訊格式：{audio_ext}（允許：{_ALLOWED_AUDIO_EXTS}）"
+            )
+        if not request.audio_path.exists():
+            raise FileNotFoundError(
+                f"音訊檔案不存在：{request.audio_path}"
+            )
+
         project_id = f"proj-{uuid.uuid4().hex[:8]}"
         now = datetime.now().isoformat()
 
@@ -214,18 +228,23 @@ class Pipeline:
             # 從 mood_hint 推斷 EDTalk 情緒類型
             exp_type = mood_to_exp_type(request.mood_hint)
 
-            # Step 8: 影片渲染（V2.0 EDTalk ~2.4GB VRAM）
+            # Step 8: 影片渲染（V3.0 三引擎：EDTalk / MuseTalk / LP+MT）
             current_step = 8
             # 使用人聲軌道（非原始混音）+ 情緒 exp_type
-            # _render_edtalk() 內部已有 _pre_launch_cleanup()
+            # 各引擎內部已有 _pre_launch_cleanup()
             #
-            # ⚠️ 重要：EDTalk 需要「臉部肖像」作為 source_path，
-            #    不是合成後的全場景圖（1920×1080）！
+            # ⚠️ 重要：EDTalk / LivePortrait 需要「臉部肖像」作為 source，
+            #    不是合成後的全場景圖（1920x1080）！
             #    必須餵入 character_image（原始 avatar），
-            #    否則臉部偵測失敗 → 表情扭曲 + 嘴型不動。
+            #    否則臉部偵測失敗。
             log_vram("Step 8 開始前")
-            check_vram_safety("Step 8 EDTalk 啟動前")
-            self._notify(8, "影片渲染（EDTalk）")
+            check_vram_safety("Step 8 渲染啟動前")
+            renderer_label = {
+                "edtalk": "EDTalk",
+                "musetalk": "MuseTalk",
+                "liveportrait_musetalk": "LivePortrait+MuseTalk",
+            }.get(config.SINGER_RENDERER, config.SINGER_RENDERER)
+            self._notify(8, f"影片渲染（{renderer_label}）")
             video_path = config.VIDEOS_DIR / f"{project_id}.mp4"
             renderer = VideoRenderer()
             _, render_mode = renderer.render(
@@ -235,7 +254,7 @@ class Pipeline:
             )
             state.final_video = str(video_path)
             state.render_mode = render_mode
-            log_vram("Step 8 完成後（EDTalk subprocess 已結束）")
+            log_vram(f"Step 8 完成後（{render_mode} subprocess 已結束）")
 
             # Step 9: QA 品質檢驗（嘴唇同步分析）
             current_step = 9
@@ -290,19 +309,13 @@ class Pipeline:
                 "管線失敗（Step %d 中斷, %s）：%s\n%s",
                 current_step, type(exc).__name__, exc, tb_text,
             )
-            # 從 traceback 擷取最後一行呼叫位置（最精準的錯誤定位）
-            tb_lines = tb_text.strip().split("\n")
-            # 取倒數第 3 行（通常是 File "xxx", line N）
-            location = ""
-            for line in reversed(tb_lines):
-                if "File " in line and ", line " in line:
-                    location = line.strip()
-                    break
+            # HIGH-03 修復：分離內部日誌與使用者訊息
+            # 完整 traceback 僅記錄到日誌（含檔案路徑，供開發者除錯）
+            # 使用者訊息不包含內部路徑，避免洩漏系統資訊
             state.status = "failed"
             state.error_message = (
-                f"[Step {current_step}/10] {type(exc).__name__}: {exc}"
-                f"\n📍 {location}" if location else
-                f"[Step {current_step}/10] {type(exc).__name__}: {exc}"
+                f"[Step {current_step}/10] "
+                f"處理失敗（{type(exc).__name__}），請聯繫管理員查看日誌。"
             )
 
         return state

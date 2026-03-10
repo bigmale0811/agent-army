@@ -48,3 +48,25 @@
   - **首選候選**：EDTalk（ECCV 2024 Oral，支援 8 種情緒 CLI 注入，456 stars）— 需 PoC 驗證 VRAM
   - **備選候選**：LivePortrait（17.9k stars, MIT）+ MuseTalk 1.5（5.4k stars, MIT）組合管線
 - **下一步**：精算師（Sonnet）對兩個方案進行 VRAM 攻擊測試，架構師（Opus）裁決
+
+## 2026-03-10 CEO 決策：Singer V3.0 — LivePortrait + MuseTalk 混合管線
+
+### 決策
+- **CEO 選擇方案 1**：LivePortrait + MuseTalk 混合管線
+- **版本號**：V3.0（全新架構，大版本號）
+- **LivePortrait**：負責頭部動態 + 表情（眨眼、抬眉、微笑）
+- **MuseTalk**：負責嘴唇同步（已驗證 PASS，VRAM 峰值 8,258MB）
+- **VRAM 策略**：分時管控（兩模型不同時載入）
+
+### 技術研究結果
+- LivePortrait 有**內建表情參數**（smile/blink/eyebrow/wink/aaa/eee/woo），不一定需要參考圖
+- VRAM 僅 4-6GB（安全）
+- Python API 可直接呼叫（`LivePortraitPipeline`）
+- MIT 授權，17.9k stars
+- ⚠️ 官方推薦 CUDA 11.8 + PyTorch 2.3.0，RTX 5070 (sm_120) 需 cu128
+
+### 階段性決策
+1. **先跑 PoC** — 先 clone + 壓測 VRAM 和品質
+2. **先研究 LivePortrait 內建能力** — 確認表情參數是否足以取代參考圖庫
+3. **情緒來源簡化** — 先做全曲單一情緒，時間軸情緒留後續版本
+4. **EDTalk (V2.0) 保留** — 作為降級方案（256×256，2.4GB VRAM）

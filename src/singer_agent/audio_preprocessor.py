@@ -1,14 +1,15 @@
 """
-音訊前處理模組：使用 Demucs 進行人聲分離 + EDTalk 情緒映射。
+音訊前處理模組：使用 Demucs 進行人聲分離 + 情緒映射。
 
 解決問題：
 1. 間奏/呼吸段嘴巴亂動 → Demucs 提取純人聲 + noise gate
-2. 情緒標籤精準映射 → mood_hint → EDTalk --exp_type
+2. 情緒標籤精準映射 → mood_hint → EDTalk --exp_type / LivePortrait 表情參數
 VRAM：3-4GB（Demucs 隔離 subprocess，結束後自動釋放）。
 """
 
 import logging
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 from src.singer_agent import config
@@ -92,6 +93,68 @@ EMOTION_EDTALK_MAP: dict[str, str] = {
 
 # 預設情緒：neutral（EDTalk 原生支援）
 DEFAULT_EXP_TYPE = "neutral"
+
+
+# ─────────────────────────────────────────────────
+# V3.0 LivePortrait 表情參數映射
+# 連續值控制，比 EDTalk 8 種離散情緒更精細
+# ─────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class LivePortraitExpression:
+    """
+    LivePortrait 表情參數集（不可變物件）。
+
+    數值範圍 -20 ~ 20，對應 delta_new keypoint 偏移量。
+    正值通常代表加強該表情特徵。
+    """
+    smile: float = 0.0
+    eyebrow: float = 0.0
+    wink: float = 0.0
+    eyeball_direction_x: float = 0.0
+    eyeball_direction_y: float = 0.0
+    head_pitch: float = 0.0
+    head_yaw: float = 0.0
+    head_roll: float = 0.0
+
+
+# 情緒標籤 → LivePortrait 參數映射表
+# key 使用 EDTalk 8 種情緒標籤（由 mood_to_exp_type() 產出）
+EMOTION_LIVEPORTRAIT_MAP: dict[str, LivePortraitExpression] = {
+    "happy": LivePortraitExpression(smile=8.0, eyebrow=3.0),
+    "sad": LivePortraitExpression(smile=-3.0, eyebrow=-5.0, head_pitch=3.0),
+    "angry": LivePortraitExpression(smile=-5.0, eyebrow=-8.0),
+    "surprised": LivePortraitExpression(eyebrow=10.0, eyeball_direction_y=-3.0),
+    "fear": LivePortraitExpression(eyebrow=6.0, eyeball_direction_y=-4.0, smile=-2.0),
+    "contempt": LivePortraitExpression(smile=2.0, eyebrow=-3.0, wink=3.0),
+    "disgusted": LivePortraitExpression(smile=-4.0, eyebrow=-6.0),
+    "neutral": LivePortraitExpression(),
+}
+
+
+def mood_to_liveportrait_params(mood_hint: str) -> LivePortraitExpression:
+    """
+    從情緒描述推斷 LivePortrait 表情參數。
+
+    先經由 mood_to_exp_type() 取得 EDTalk 標籤，
+    再查表取得對應的 LivePortrait 連續表情參數。
+    未匹配時 fallback 為 neutral（所有參數為 0）。
+
+    Args:
+        mood_hint: 情緒描述字串（如 "感傷、悲傷" 或 "sad, melancholic"）
+
+    Returns:
+        LivePortraitExpression 不可變物件
+    """
+    exp_type = mood_to_exp_type(mood_hint)
+    expression = EMOTION_LIVEPORTRAIT_MAP.get(
+        exp_type, EMOTION_LIVEPORTRAIT_MAP["neutral"],
+    )
+    _logger.info(
+        "LivePortrait 映射：'%s' → exp_type='%s' → %s",
+        mood_hint, exp_type, expression,
+    )
+    return expression
 
 # V1.0 相容：保留 expression_scale 映射（供舊測試使用）
 EMOTION_EXPRESSION_MAP: dict[str, float] = {

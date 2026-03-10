@@ -1,16 +1,18 @@
 # -*- coding: utf-8 -*-
 """
-DEV-11: 影片合成模組（V2.1 — EDTalk / MuseTalk 雙引擎）。
+DEV-11: 影片合成模組（V3.0 — EDTalk / MuseTalk / LivePortrait+MuseTalk 三引擎）。
 
 VideoRenderer 提供：
-- EDTalk 路徑（subprocess，8 種情緒，256×256，VRAM ~2.4GB）
-- MuseTalk 路徑（subprocess，高解析度 704×1216，VRAM ~8.2GB）
+- EDTalk 路徑（subprocess，8 種情緒，256x256，VRAM ~2.4GB）
+- MuseTalk 路徑（subprocess，高解析度 704x1216，VRAM ~8.2GB）
+- LivePortrait+MuseTalk 混合管線（表情動態 + 嘴唇同步，分時 VRAM ~8.2GB）
 - FFmpeg 靜態降級（靜態圖片 + 音訊合成影片）
 - 非 ASCII 路徑自動處理（透過 path_utils）
 
-V2.1 變更：
-- 新增 MuseTalk 渲染引擎（高解析度對嘴同步）
-- 透過 SINGER_RENDERER 環境變數切換引擎
+V3.0 變更：
+- 新增 LivePortrait + MuseTalk 混合管線（表情注入 + 嘴唇同步）
+- LivePortrait 僅產出帶表情的靜態 PNG，再由 MuseTalk 驅動嘴唇
+- VRAM 分時管控：兩模型不同時載入
 """
 import logging
 import shutil
@@ -23,10 +25,27 @@ from src.singer_agent.path_utils import to_ascii_temp, cleanup_temp
 
 _logger = logging.getLogger(__name__)
 
+# exp_type 白名單（防止未驗證的字串進入 subprocess 參數）
+_VALID_EXP_TYPES: frozenset[str] = frozenset({
+    "angry", "contempt", "disgusted", "fear",
+    "happy", "neutral", "sad", "surprised",
+})
+
+
+def _sanitize_exp_type(exp_type: str) -> str:
+    """驗證 exp_type 是否在白名單內，不合法時降級為 neutral。"""
+    if exp_type in _VALID_EXP_TYPES:
+        return exp_type
+    _logger.warning(
+        "無效的 exp_type '%s'，降級為 'neutral'（允許值：%s）",
+        exp_type, ", ".join(sorted(_VALID_EXP_TYPES)),
+    )
+    return "neutral"
+
 
 class VideoRenderer:
     """
-    影片渲染器（V2.1 — EDTalk / MuseTalk 雙引擎）。
+    影片渲染器（V3.0 — EDTalk / MuseTalk / LivePortrait+MuseTalk 三引擎）。
 
     主路徑：由 SINGER_RENDERER 環境變數決定渲染引擎。
     降級路徑：FFmpeg 靜態圖片迴圈 + 音訊合成。
@@ -34,14 +53,16 @@ class VideoRenderer:
     Args:
         edtalk_dir: EDTalk 安裝目錄
         musetalk_dir: MuseTalk 安裝目錄
+        liveportrait_dir: LivePortrait 安裝目錄（V3.0）
         ffmpeg_bin: FFmpeg 執行檔路徑
-        renderer: 渲染引擎選擇（"edtalk" 或 "musetalk"）
+        renderer: 渲染引擎選擇（"edtalk" / "musetalk" / "liveportrait_musetalk"）
     """
 
     def __init__(
         self,
         edtalk_dir: Path | None = None,
         musetalk_dir: Path | None = None,
+        liveportrait_dir: Path | None = None,
         ffmpeg_bin: Path | None = None,
         renderer: str | None = None,
     ) -> None:
@@ -60,9 +81,13 @@ class VideoRenderer:
         self._musetalk_python = config.MUSETALK_PYTHON
         self._musetalk_version = config.MUSETALK_VERSION
 
+        # LivePortrait 設定（V3.0）
+        self.liveportrait_dir = liveportrait_dir or config.LIVEPORTRAIT_DIR
+
     # 推論超時（秒）
     _RENDER_TIMEOUT: int = 600       # EDTalk（短片段，~11s/10s 影片）
-    _MUSETALK_TIMEOUT: int = 1200    # MuseTalk（完整歌曲 ~4 分鐘需 5-8 分鐘推理）
+    _MUSETALK_TIMEOUT: int = 1800    # MuseTalk（完整歌曲需 15-25 分鐘推理）
+    _LP_MUSETALK_TIMEOUT: int = 2400 # LivePortrait(~15s) + MuseTalk(~25min)
 
     def render(
         self,
@@ -89,12 +114,21 @@ class VideoRenderer:
         """
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
+        # CRIT-02 修復：exp_type 白名單驗證
+        exp_type = _sanitize_exp_type(exp_type)
+
         if dry_run:
             _logger.info("dry_run 模式：建立佔位影片檔")
             output_path.write_bytes(b"\x00" * 100)
             return output_path, "dry_run"
 
         # 根據渲染引擎分派
+        if self.renderer == "liveportrait_musetalk":
+            return self._render_liveportrait_musetalk(
+                composite_image, audio_path, output_path,
+                exp_type=exp_type,
+            )
+
         if self.renderer == "musetalk":
             return self._render_musetalk(
                 composite_image, audio_path, output_path,
@@ -270,17 +304,21 @@ class VideoRenderer:
                 )
 
             # 產生 MuseTalk inference YAML 配置
+            # HIGH-01 修復：使用 json 安全序列化取代 f-string 建構
+            # JSON 是合法 YAML 子集，避免 YAML 注入風險
+            import json as _json
             yaml_config = result_dir / "inference_config.yaml"
-            # Windows 路徑反斜線在 YAML 雙引號中會被解讀為跳脫字元
-            # 統一轉為正斜線避免 ScannerError
-            safe_img = str(ascii_img).replace("\\", "/")
-            safe_audio = str(ascii_audio).replace("\\", "/")
-            yaml_content = (
-                f"singer_task:\n"
-                f'  video_path: "{safe_img}"\n'
-                f'  audio_path: "{safe_audio}"\n'
+            # Windows 路徑反斜線統一轉為正斜線
+            yaml_data = {
+                "singer_task": {
+                    "video_path": str(ascii_img).replace("\\", "/"),
+                    "audio_path": str(ascii_audio).replace("\\", "/"),
+                }
+            }
+            yaml_config.write_text(
+                _json.dumps(yaml_data, indent=2, ensure_ascii=False),
+                encoding="utf-8",
             )
-            yaml_config.write_text(yaml_content, encoding="utf-8")
 
             # MuseTalk 模型路徑（根據版本）
             model_paths = {
@@ -366,6 +404,118 @@ class VideoRenderer:
             # 清理暫存輸出目錄（忽略錯誤）
             shutil.rmtree(str(result_dir), ignore_errors=True)
 
+    def _render_liveportrait_musetalk(
+        self,
+        composite_image: Path,
+        audio_path: Path,
+        output_path: Path,
+        exp_type: str = "neutral",
+    ) -> tuple[Path, str]:
+        """
+        V3.0 混合管線：LivePortrait 表情注入 + MuseTalk 嘴唇同步。
+
+        Phase A: LivePortrait retarget（~15s, ~1.5GB VRAM）
+        閘門:    VRAM 安全檢查 + 強制清理
+        Phase B: MuseTalk inference（~25min, ~8.2GB VRAM）
+
+        降級策略：
+        - LivePortrait 失敗 → 跳過表情，直接用原圖餵 MuseTalk
+        - MuseTalk 也失敗 → fallback 為 EDTalk
+        """
+        from src.singer_agent.audio_preprocessor import EMOTION_LIVEPORTRAIT_MAP
+        from src.singer_agent.liveportrait_adapter import LivePortraitAdapter
+
+        _logger.info(
+            "開始 LivePortrait+MuseTalk 混合管線（exp_type=%s）", exp_type,
+        )
+
+        # Phase A: LivePortrait 表情注入
+        intermediate_image = composite_image  # 降級預設：使用原圖
+        lp_output_dir: Path | None = None  # 追蹤暫存目錄，確保清理
+
+        try:
+            self._pre_launch_cleanup()
+
+            adapter = LivePortraitAdapter(
+                liveportrait_dir=self.liveportrait_dir,
+            )
+
+            # 取得表情參數
+            expression = EMOTION_LIVEPORTRAIT_MAP.get(
+                exp_type, EMOTION_LIVEPORTRAIT_MAP["neutral"],
+            )
+
+            # 建立暫存目錄（使用模組層級 tempfile，避免重複 import）
+            lp_output_dir = Path(tempfile.mkdtemp(prefix="liveportrait_"))
+
+            intermediate_image = adapter.retarget(
+                source_image=composite_image,
+                expression=expression,
+                output_dir=lp_output_dir,
+            )
+            _logger.info(
+                "LivePortrait 表情注入完成：%s", intermediate_image,
+            )
+        except Exception as exc:
+            _logger.warning(
+                "LivePortrait 失敗（%s），降級為純 MuseTalk（無表情）", exc,
+            )
+            # intermediate_image 保持為原始 composite_image
+
+        # VRAM 閘門：Phase A → Phase B
+        self._vram_gate("LivePortrait -> MuseTalk")
+
+        # Phase B: MuseTalk 嘴唇同步（複用既有方法）
+        try:
+            return self._render_musetalk(
+                intermediate_image, audio_path, output_path,
+                exp_type=exp_type,
+            )
+        except Exception as exc:
+            _logger.warning(
+                "MuseTalk 失敗（%s），降級為 EDTalk", exc,
+            )
+            return self._render_edtalk(
+                composite_image, audio_path, output_path,
+                exp_type=exp_type,
+            )
+        finally:
+            # 清理 LivePortrait 暫存目錄（防止 tempfile leak）
+            if lp_output_dir and lp_output_dir.exists():
+                shutil.rmtree(str(lp_output_dir), ignore_errors=True)
+
+    def _vram_gate(self, checkpoint_name: str) -> None:
+        """
+        VRAM 分時管控閘門。
+
+        在兩個 GPU 模型之間強制執行 VRAM 清理 + 安全檢查，
+        確保下一個模型有足夠 VRAM。
+        """
+        from src.singer_agent.vram_monitor import (
+            free_comfyui_models, force_cleanup, log_vram, check_vram_safety,
+        )
+
+        _logger.info("VRAM 閘門：%s", checkpoint_name)
+        force_cleanup()
+        log_vram(checkpoint_name)
+
+        if not check_vram_safety(checkpoint_name):
+            _logger.warning(
+                "VRAM 閘門 '%s' 安全檢查未通過，嘗試卸載 ComfyUI",
+                checkpoint_name,
+            )
+            free_comfyui_models(
+                getattr(config, "COMFYUI_URL", "http://localhost:8188"),
+            )
+            force_cleanup()
+            if not check_vram_safety(f"{checkpoint_name} (retry)"):
+                _logger.error(
+                    "VRAM 閘門 '%s' 二次檢查仍未通過，強制繼續但可能 OOM",
+                    checkpoint_name,
+                )
+                # 記錄警告但不阻擋（降級策略會在 OOM 時 fallback）
+                # 生產環境若嚴格要求可改為 raise RuntimeError
+
     def _render_ffmpeg(
         self,
         composite_image: Path,
@@ -390,14 +540,21 @@ class VideoRenderer:
             str(output_path),
         ]
 
-        subprocess.run(
-            cmd,
-            check=True,
-            capture_output=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=300,
-        )
+        try:
+            subprocess.run(
+                cmd,
+                check=True,
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=300,
+            )
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("FFmpeg 靜態渲染超時（>300s）")
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(
+                f"FFmpeg 靜態渲染失敗（exit={e.returncode}）"
+            )
 
         _logger.info("FFmpeg 靜態渲染完成：%s", output_path)
         return output_path, "ffmpeg_static"

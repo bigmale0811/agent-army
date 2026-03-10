@@ -1,11 +1,57 @@
 # 🧠 Active Context
-更新：2026-03-10 06:00
+更新：2026-03-10 19:00
 
-## 🏆 Singer Agent V2.1 MuseTalk 整合完成！
+## 🚀 Singer V3.0 — Stage 5 審查完成，進入 Stage 6 遞迴驗證
 
-### 🚀 部署狀態
+### ✅ Stage 5 審查結果（2026-03-10）
+- ✅ **測試**：62/62 全部通過（24.90s）
+- ✅ **Python Code Review**：已修復所有問題
+- ✅ **Security Review**：3 CRITICAL + 4 HIGH 全部修復
+  - CRIT-02: exp_type 白名單驗證（`_sanitize_exp_type`）
+  - CRIT-03: retarget 腳本路徑穿越防護（`_assert_safe_path`）
+  - HIGH-01: YAML f-string → JSON 安全序列化
+  - HIGH-02: SINGER_RENDERER / MUSETALK_VERSION 白名單
+  - HIGH-03: 錯誤訊息不再洩漏內部路徑
+  - HIGH-04: audio_path 副檔名 + 存在性驗證
+  - Python: tempfile leak 修復、FFmpeg timeout 處理
+- ✅ **QA Review**：測試計畫已產出（16 TC + 10 BC + 4 DG）
+- ⚠️ CRIT-01（.env 密鑰曝光）為既有問題，建議輪換但不阻擋 V3.0
+- 📋 5 個 MEDIUM + 3 個 LOW 問題已記錄，列入後續 hardening
+
+### CEO 決策（2026-03-10）
+- 方案 1：LivePortrait（表情動態）+ MuseTalk（嘴唇同步）
+- 版本號：V3.0（全新架構）
+- 情緒來源：先做全曲單一情緒，時間軸留後續
+- EDTalk (V2.0) 保留為降級方案
+
+### ✅ LivePortrait PoC 壓測 — PASS！(2026-03-10)
+- ✅ git clone → D:\Projects\LivePortrait
+- ✅ liveportrait_env (Python 3.10.11) + PyTorch 2.10.0+cu128
+- ✅ 模型權重 18 檔案已下載（HuggingFace KlingTeam/LivePortrait）
+- ✅ **PoC 壓測結果：**
+  - **VRAM 峰值：1,554 MB (1.5GB)** — 極低，12GB 紅線的 13%
+  - 推理時間：11.9 秒（78 frames, 3.1s 影片）
+  - 輸出：512×512, 25fps
+  - 首次載入 342 秒（ONNX warmup），後續快速
+  - 產出：D:\Projects\LivePortrait\results\poc\s0--d0_concat.mp4
+- ✅ 表情控制能力：內建 smile/blink/eyebrow/wink 參數，不需參考圖
+- ✅ MIT 授權，17.9k stars
+
+### VRAM 分時管控預算
+| 元件 | VRAM | 時序 |
+|------|------|------|
+| LivePortrait | 1.5 GB | Stage 1: 表情動態 |
+| MuseTalk | 8.2 GB | Stage 2: 嘴唇同步 |
+| 合計（分時） | max = 8.2 GB | 安全空間 3.8 GB |
+
+### 下一步
+- ⏳ 等 CEO 確認 PoC 結果
+- ⏳ 進入 FSM Stage 2（架構設計 + 開發計畫）
+- ⏳ 設計 LivePortrait → MuseTalk 串接管線
+
+### 部署狀態
 - ✅ V2.0 Bot 已啟動（EDTalk 引擎）
-- ✅ **V2.1 MuseTalk 雙引擎整合完成**
+- ✅ V2.1 MuseTalk 雙引擎整合完成
 - 🟢 透過 `SINGER_RENDERER=musetalk` 環境變數切換
 
 ### ✅ MuseTalk Pipeline 整合 (2026-03-10)

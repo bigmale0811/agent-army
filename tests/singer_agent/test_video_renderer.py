@@ -363,9 +363,10 @@ class TestRenderMusetalk:
 
         assert len(yaml_contents) == 1
         yaml_text = yaml_contents[0]
-        assert "singer_task:" in yaml_text
-        assert "video_path:" in yaml_text
-        assert "audio_path:" in yaml_text
+        # HIGH-01 修復後：YAML 改用 JSON 安全序列化（JSON 是合法 YAML 子集）
+        assert "singer_task" in yaml_text
+        assert "video_path" in yaml_text
+        assert "audio_path" in yaml_text
 
     def test_musetalk_failure_raises_runtime_error(self, tmp_path):
         """MuseTalk 推論失敗時 raise RuntimeError。"""
@@ -617,3 +618,528 @@ class TestMoodToExpType:
         expected = {"angry", "contempt", "disgusted", "fear",
                     "happy", "sad", "surprised", "neutral"}
         assert edtalk_types == expected
+
+
+# ─────────────────────────────────────────────────
+# V3.0 LivePortrait + MuseTalk 混合管線測試
+# ─────────────────────────────────────────────────
+
+class TestLivePortraitExpression:
+    """LivePortraitExpression dataclass 不可變性與預設值測試。"""
+
+    def test_expression_is_frozen(self):
+        """LivePortraitExpression 是凍結 dataclass（不可變物件）。"""
+        from src.singer_agent.audio_preprocessor import LivePortraitExpression
+        expr = LivePortraitExpression(smile=5.0)
+        with pytest.raises((AttributeError, TypeError)):
+            expr.smile = 99.0  # type: ignore[misc]
+
+    def test_default_values_are_all_zero(self):
+        """預設建構時所有欄位為 0.0。"""
+        from src.singer_agent.audio_preprocessor import LivePortraitExpression
+        expr = LivePortraitExpression()
+        assert expr.smile == 0.0
+        assert expr.eyebrow == 0.0
+        assert expr.wink == 0.0
+        assert expr.eyeball_direction_x == 0.0
+        assert expr.eyeball_direction_y == 0.0
+        assert expr.head_pitch == 0.0
+        assert expr.head_yaw == 0.0
+        assert expr.head_roll == 0.0
+
+    def test_custom_values_stored_correctly(self):
+        """自訂數值正確儲存於對應欄位。"""
+        from src.singer_agent.audio_preprocessor import LivePortraitExpression
+        expr = LivePortraitExpression(
+            smile=8.0,
+            eyebrow=-5.0,
+            head_pitch=3.0,
+            head_yaw=1.5,
+            head_roll=-2.0,
+        )
+        assert expr.smile == 8.0
+        assert expr.eyebrow == -5.0
+        assert expr.head_pitch == 3.0
+        assert expr.head_yaw == 1.5
+        assert expr.head_roll == -2.0
+
+
+class TestEmotionLivePortraitMap:
+    """EMOTION_LIVEPORTRAIT_MAP 映射表正確性測試。"""
+
+    def test_all_8_emotion_labels_exist(self):
+        """映射表涵蓋全部 8 種情緒標籤。"""
+        from src.singer_agent.audio_preprocessor import EMOTION_LIVEPORTRAIT_MAP
+        expected = {"happy", "sad", "angry", "surprised",
+                    "fear", "contempt", "disgusted", "neutral"}
+        assert expected == set(EMOTION_LIVEPORTRAIT_MAP.keys())
+
+    def test_happy_has_positive_smile(self):
+        """happy 情緒的 smile 參數大於 0。"""
+        from src.singer_agent.audio_preprocessor import EMOTION_LIVEPORTRAIT_MAP
+        expr = EMOTION_LIVEPORTRAIT_MAP["happy"]
+        assert expr.smile > 0.0
+
+    def test_sad_has_negative_smile(self):
+        """sad 情緒的 smile 參數小於 0（下垂嘴角）。"""
+        from src.singer_agent.audio_preprocessor import EMOTION_LIVEPORTRAIT_MAP
+        expr = EMOTION_LIVEPORTRAIT_MAP["sad"]
+        assert expr.smile < 0.0
+
+    def test_neutral_has_all_zeros(self):
+        """neutral 情緒的所有參數均為 0.0。"""
+        from src.singer_agent.audio_preprocessor import (
+            EMOTION_LIVEPORTRAIT_MAP,
+            LivePortraitExpression,
+        )
+        expr = EMOTION_LIVEPORTRAIT_MAP["neutral"]
+        assert expr == LivePortraitExpression()
+
+    def test_unknown_emotion_falls_back_to_neutral(self):
+        """查詢不存在的 key 時，dict.get 回傳 neutral。"""
+        from src.singer_agent.audio_preprocessor import EMOTION_LIVEPORTRAIT_MAP
+        neutral = EMOTION_LIVEPORTRAIT_MAP["neutral"]
+        result = EMOTION_LIVEPORTRAIT_MAP.get("unknown_emotion", neutral)
+        assert result == neutral
+
+
+class TestMoodToLivePortraitParams:
+    """mood_to_liveportrait_params() 情緒描述 → LivePortrait 參數轉換測試。"""
+
+    def test_sad_returns_sad_expression(self):
+        """'sad' 關鍵字回傳 sad 表情（smile < 0）。"""
+        from src.singer_agent.audio_preprocessor import mood_to_liveportrait_params
+        expr = mood_to_liveportrait_params("sad")
+        assert expr.smile < 0.0
+
+    def test_happy_excited_returns_happy_expression(self):
+        """'happy, excited' 複合描述回傳 happy 表情（smile > 0）。"""
+        from src.singer_agent.audio_preprocessor import mood_to_liveportrait_params
+        expr = mood_to_liveportrait_params("happy, excited")
+        assert expr.smile > 0.0
+
+    def test_empty_string_returns_neutral(self):
+        """空字串回傳 neutral 表情（所有欄位為 0.0）。"""
+        from src.singer_agent.audio_preprocessor import (
+            mood_to_liveportrait_params,
+            LivePortraitExpression,
+        )
+        expr = mood_to_liveportrait_params("")
+        assert expr == LivePortraitExpression()
+
+    def test_unknown_keyword_returns_neutral(self):
+        """無法匹配的關鍵字回傳 neutral 表情。"""
+        from src.singer_agent.audio_preprocessor import (
+            mood_to_liveportrait_params,
+            LivePortraitExpression,
+        )
+        expr = mood_to_liveportrait_params("totally_unknown_emotion_xyz")
+        assert expr == LivePortraitExpression()
+
+
+class TestLivePortraitAdapter:
+    """LivePortraitAdapter subprocess 呼叫測試。"""
+
+    def _make_adapter(self, tmp_path):
+        """建立測試用 LivePortraitAdapter（注入暫存路徑）。"""
+        from src.singer_agent.liveportrait_adapter import LivePortraitAdapter
+
+        lp_dir = tmp_path / "LivePortrait"
+        python_exe = lp_dir / "liveportrait_env" / "Scripts" / "python.exe"
+        retarget_script = lp_dir / "liveportrait_retarget.py"
+        _create_file(python_exe)
+        _create_file(retarget_script)
+
+        adapter = LivePortraitAdapter(
+            liveportrait_dir=lp_dir,
+            python_bin=python_exe,
+            retarget_script=retarget_script,
+        )
+        return adapter, lp_dir, python_exe, retarget_script
+
+    def test_retarget_success(self, tmp_path):
+        """retarget 正常完成時回傳 PNG 路徑。"""
+        from src.singer_agent.audio_preprocessor import LivePortraitExpression
+
+        adapter, lp_dir, python_exe, retarget_script = self._make_adapter(tmp_path)
+        source_image = _create_file(tmp_path / "avatar.png")
+        output_dir = tmp_path / "lp_out"
+        expression = LivePortraitExpression(smile=5.0)
+
+        def run_side_effect(*args, **kwargs):
+            # 模擬 retarget 腳本產出 retargeted.png
+            output_dir.mkdir(parents=True, exist_ok=True)
+            _create_file(output_dir / "retargeted.png", b"\xff" * 200)
+            return MagicMock(returncode=0, stdout="ok", stderr="")
+
+        with patch("src.singer_agent.liveportrait_adapter.subprocess.run",
+                   side_effect=run_side_effect), \
+             patch("src.singer_agent.liveportrait_adapter.to_ascii_temp",
+                   side_effect=lambda p: p), \
+             patch("src.singer_agent.liveportrait_adapter.cleanup_temp"):
+            result = adapter.retarget(source_image, expression, output_dir)
+
+        assert result.suffix == ".png"
+        assert result.exists()
+
+    def test_retarget_raises_file_not_found_when_python_bin_missing(self, tmp_path):
+        """python_bin 不存在時 raise FileNotFoundError。"""
+        from src.singer_agent.liveportrait_adapter import LivePortraitAdapter
+        from src.singer_agent.audio_preprocessor import LivePortraitExpression
+
+        lp_dir = tmp_path / "LivePortrait"
+        retarget_script = lp_dir / "liveportrait_retarget.py"
+        _create_file(retarget_script)
+
+        adapter = LivePortraitAdapter(
+            liveportrait_dir=lp_dir,
+            python_bin=tmp_path / "nonexistent" / "python.exe",
+            retarget_script=retarget_script,
+        )
+
+        with pytest.raises(FileNotFoundError, match="LivePortrait venv Python"):
+            adapter.retarget(
+                tmp_path / "avatar.png",
+                LivePortraitExpression(),
+                tmp_path / "out",
+            )
+
+    def test_retarget_raises_file_not_found_when_script_missing(self, tmp_path):
+        """retarget 腳本不存在時 raise FileNotFoundError。"""
+        from src.singer_agent.liveportrait_adapter import LivePortraitAdapter
+        from src.singer_agent.audio_preprocessor import LivePortraitExpression
+
+        lp_dir = tmp_path / "LivePortrait"
+        python_exe = lp_dir / "liveportrait_env" / "Scripts" / "python.exe"
+        _create_file(python_exe)
+
+        adapter = LivePortraitAdapter(
+            liveportrait_dir=lp_dir,
+            python_bin=python_exe,
+            retarget_script=tmp_path / "nonexistent_script.py",
+        )
+
+        with pytest.raises(FileNotFoundError, match="LivePortrait retarget 腳本"):
+            adapter.retarget(
+                tmp_path / "avatar.png",
+                LivePortraitExpression(),
+                tmp_path / "out",
+            )
+
+    def test_retarget_raises_runtime_error_on_subprocess_failure(self, tmp_path):
+        """subprocess 回傳非零 exit code 時 raise RuntimeError。"""
+        from src.singer_agent.audio_preprocessor import LivePortraitExpression
+
+        adapter, lp_dir, python_exe, retarget_script = self._make_adapter(tmp_path)
+        source_image = _create_file(tmp_path / "avatar.png")
+        output_dir = tmp_path / "lp_out"
+
+        with patch("src.singer_agent.liveportrait_adapter.subprocess.run",
+                   return_value=MagicMock(
+                       returncode=1, stdout="", stderr="CUDA OOM"
+                   )), \
+             patch("src.singer_agent.liveportrait_adapter.to_ascii_temp",
+                   side_effect=lambda p: p), \
+             patch("src.singer_agent.liveportrait_adapter.cleanup_temp"):
+            with pytest.raises(RuntimeError, match="LivePortrait retarget 失敗"):
+                adapter.retarget(source_image, LivePortraitExpression(), output_dir)
+
+    def test_retarget_raises_runtime_error_on_timeout(self, tmp_path):
+        """subprocess 超時時 raise RuntimeError。"""
+        import subprocess as sp
+        from src.singer_agent.audio_preprocessor import LivePortraitExpression
+
+        adapter, lp_dir, python_exe, retarget_script = self._make_adapter(tmp_path)
+        source_image = _create_file(tmp_path / "avatar.png")
+        output_dir = tmp_path / "lp_out"
+
+        with patch("src.singer_agent.liveportrait_adapter.subprocess.run",
+                   side_effect=sp.TimeoutExpired(cmd="test", timeout=420)), \
+             patch("src.singer_agent.liveportrait_adapter.to_ascii_temp",
+                   side_effect=lambda p: p), \
+             patch("src.singer_agent.liveportrait_adapter.cleanup_temp"):
+            with pytest.raises(RuntimeError, match="超時"):
+                adapter.retarget(source_image, LivePortraitExpression(), output_dir)
+
+
+class TestRenderLivePortraitMusetalk:
+    """_render_liveportrait_musetalk() 混合管線測試。"""
+
+    def _make_renderer(self, tmp_path):
+        """建立 liveportrait_musetalk 渲染模式的 VideoRenderer。"""
+        from src.singer_agent.video_renderer import VideoRenderer
+
+        lp_dir = tmp_path / "LivePortrait"
+        musetalk_dir = tmp_path / "musetalk"
+        python_exe = musetalk_dir / "musetalk_env" / "Scripts" / "python.exe"
+        _create_file(python_exe)
+
+        vr = VideoRenderer(
+            liveportrait_dir=lp_dir,
+            musetalk_dir=musetalk_dir,
+            renderer="liveportrait_musetalk",
+        )
+        vr._musetalk_python = python_exe
+        vr._musetalk_version = "v15"
+        return vr, lp_dir, musetalk_dir
+
+    def test_full_pipeline_success(self, tmp_path):
+        """LivePortrait + MuseTalk 全管線成功時回傳 'musetalk' 模式。"""
+        from src.singer_agent.audio_preprocessor import LivePortraitExpression
+
+        img = _create_file(tmp_path / "composite.png")
+        audio = _create_file(tmp_path / "audio.mp3")
+        out = tmp_path / "output" / "video.mp4"
+        vr, lp_dir, musetalk_dir = self._make_renderer(tmp_path)
+
+        retargeted_png = tmp_path / "lp_out" / "retargeted.png"
+        _create_file(retargeted_png, b"\xff" * 100)
+
+        mock_adapter = MagicMock()
+        mock_adapter.retarget.return_value = retargeted_png
+
+        def musetalk_side_effect(*args, **kwargs):
+            cmd = args[0]
+            for i, arg in enumerate(cmd):
+                if arg == "--result_dir":
+                    rd = Path(cmd[i + 1])
+                    _create_file(rd / "v15" / "output.mp4", b"\xff" * 500)
+            return MagicMock(returncode=0, stdout="ok", stderr="")
+
+        # LivePortraitAdapter 是在方法內部 import，須 patch 原始模組
+        with patch("src.singer_agent.liveportrait_adapter.LivePortraitAdapter",
+                   return_value=mock_adapter), \
+             patch("src.singer_agent.video_renderer.subprocess.run",
+                   side_effect=musetalk_side_effect), \
+             patch.object(type(vr), "_pre_launch_cleanup"), \
+             patch.object(type(vr), "_vram_gate"):
+            path, mode = vr.render(img, audio, out, exp_type="happy")
+
+        assert mode == "musetalk"
+        assert path == out
+        assert out.exists()
+        mock_adapter.retarget.assert_called_once()
+
+    def test_liveportrait_failure_degrades_to_pure_musetalk(self, tmp_path):
+        """LivePortrait 失敗時降級為純 MuseTalk（使用原始圖片）。"""
+        img = _create_file(tmp_path / "composite.png")
+        audio = _create_file(tmp_path / "audio.mp3")
+        out = tmp_path / "output" / "video.mp4"
+        vr, lp_dir, musetalk_dir = self._make_renderer(tmp_path)
+
+        mock_adapter = MagicMock()
+        mock_adapter.retarget.side_effect = RuntimeError("LivePortrait venv 不存在")
+
+        def musetalk_side_effect(*args, **kwargs):
+            cmd = args[0]
+            for i, arg in enumerate(cmd):
+                if arg == "--result_dir":
+                    rd = Path(cmd[i + 1])
+                    _create_file(rd / "v15" / "output.mp4", b"\xff" * 500)
+            return MagicMock(returncode=0, stdout="ok", stderr="")
+
+        # LivePortraitAdapter 是在方法內部 import，須 patch 原始模組
+        with patch("src.singer_agent.liveportrait_adapter.LivePortraitAdapter",
+                   return_value=mock_adapter), \
+             patch("src.singer_agent.video_renderer.subprocess.run",
+                   side_effect=musetalk_side_effect), \
+             patch.object(type(vr), "_pre_launch_cleanup"), \
+             patch.object(type(vr), "_vram_gate"):
+            path, mode = vr.render(img, audio, out, exp_type="sad")
+
+        # 即使 LivePortrait 失敗，MuseTalk 仍成功
+        assert mode == "musetalk"
+        assert path == out
+
+    def test_musetalk_failure_degrades_to_edtalk(self, tmp_path):
+        """MuseTalk 失敗時最終降級為 EDTalk。"""
+        img = _create_file(tmp_path / "composite.png")
+        audio = _create_file(tmp_path / "audio.mp3")
+        out = tmp_path / "output" / "video.mp4"
+        vr, lp_dir, musetalk_dir = self._make_renderer(tmp_path)
+
+        # 建立 EDTalk 環境
+        edtalk_dir = tmp_path / "edtalk"
+        python_exe = edtalk_dir / "edtalk_env" / "Scripts" / "python.exe"
+        demo_script = edtalk_dir / "demo_EDTalk_A_using_predefined_exp_weights.py"
+        pose_video = edtalk_dir / "test_data" / "pose_source1.mp4"
+        _create_file(python_exe)
+        _create_file(demo_script)
+        _create_file(pose_video)
+        vr.edtalk_dir = edtalk_dir
+        vr._edtalk_python = python_exe
+        vr._edtalk_demo = demo_script
+        vr._pose_video = pose_video
+
+        retargeted_png = tmp_path / "lp_out" / "retargeted.png"
+        _create_file(retargeted_png, b"\xff" * 100)
+
+        mock_adapter = MagicMock()
+        mock_adapter.retarget.return_value = retargeted_png
+
+        call_count = {"n": 0}
+
+        def subprocess_side_effect(*args, **kwargs):
+            call_count["n"] += 1
+            cmd = args[0]
+            # 第一次 subprocess 呼叫是 MuseTalk — 讓它失敗
+            if "scripts.inference" in cmd:
+                return MagicMock(returncode=1, stdout="", stderr="OOM")
+            # 第二次 subprocess 呼叫是 EDTalk — 讓它成功
+            if any("demo_EDTalk" in str(c) for c in cmd):
+                edtalk_output = edtalk_dir / "res" / f"singer_{out.stem}.mp4"
+                _create_file(edtalk_output, b"\xff" * 300)
+                return MagicMock(returncode=0, stdout="ok", stderr="")
+            return MagicMock(returncode=0, stdout="ok", stderr="")
+
+        # LivePortraitAdapter 是在方法內部 import，須 patch 原始模組
+        with patch("src.singer_agent.liveportrait_adapter.LivePortraitAdapter",
+                   return_value=mock_adapter), \
+             patch("src.singer_agent.video_renderer.subprocess.run",
+                   side_effect=subprocess_side_effect), \
+             patch.object(type(vr), "_pre_launch_cleanup"), \
+             patch.object(type(vr), "_vram_gate"):
+            path, mode = vr.render(img, audio, out, exp_type="neutral")
+
+        assert mode == "edtalk"
+        assert path == out
+
+    def test_vram_gate_is_called_between_phases(self, tmp_path):
+        """LivePortrait 與 MuseTalk 之間必須呼叫 _vram_gate。"""
+        img = _create_file(tmp_path / "composite.png")
+        audio = _create_file(tmp_path / "audio.mp3")
+        out = tmp_path / "output" / "video.mp4"
+        vr, lp_dir, musetalk_dir = self._make_renderer(tmp_path)
+
+        retargeted_png = tmp_path / "lp_out" / "retargeted.png"
+        _create_file(retargeted_png, b"\xff" * 100)
+
+        mock_adapter = MagicMock()
+        mock_adapter.retarget.return_value = retargeted_png
+
+        def musetalk_side_effect(*args, **kwargs):
+            cmd = args[0]
+            for i, arg in enumerate(cmd):
+                if arg == "--result_dir":
+                    rd = Path(cmd[i + 1])
+                    _create_file(rd / "v15" / "output.mp4", b"\xff" * 500)
+            return MagicMock(returncode=0, stdout="ok", stderr="")
+
+        # LivePortraitAdapter 是在方法內部 import，須 patch 原始模組
+        with patch("src.singer_agent.liveportrait_adapter.LivePortraitAdapter",
+                   return_value=mock_adapter), \
+             patch("src.singer_agent.video_renderer.subprocess.run",
+                   side_effect=musetalk_side_effect), \
+             patch.object(type(vr), "_pre_launch_cleanup"), \
+             patch.object(type(vr), "_vram_gate") as mock_vram_gate:
+            vr.render(img, audio, out)
+
+        mock_vram_gate.assert_called_once()
+        # 確認 checkpoint 名稱包含 LivePortrait -> MuseTalk 的說明
+        call_args = mock_vram_gate.call_args[0][0]
+        assert "LivePortrait" in call_args or "MuseTalk" in call_args
+
+    def test_dispatch_routes_correctly_for_liveportrait_musetalk(self, tmp_path):
+        """renderer='liveportrait_musetalk' 時，render() 調用 _render_liveportrait_musetalk。"""
+        from src.singer_agent.video_renderer import VideoRenderer
+
+        img = _create_file(tmp_path / "composite.png")
+        audio = _create_file(tmp_path / "audio.mp3")
+        out = tmp_path / "output" / "video.mp4"
+
+        vr = VideoRenderer(renderer="liveportrait_musetalk")
+
+        with patch.object(
+            vr, "_render_liveportrait_musetalk",
+            return_value=(out, "musetalk"),
+        ) as mock_method:
+            vr.render(img, audio, out, exp_type="happy")
+
+        mock_method.assert_called_once()
+
+
+class TestRenderBackwardCompat:
+    """V3.0 新增後，EDTalk / MuseTalk 路徑仍正常運作的回歸測試。"""
+
+    def test_edtalk_renderer_still_works(self, tmp_path):
+        """renderer='edtalk' 仍正確路由至 EDTalk 管線（不受 V3.0 影響）。"""
+        from src.singer_agent.video_renderer import VideoRenderer
+
+        img = _create_file(tmp_path / "composite.png")
+        audio = _create_file(tmp_path / "audio.mp3")
+        out = tmp_path / "output" / "video.mp4"
+
+        edtalk_dir = tmp_path / "edtalk"
+        python_exe = edtalk_dir / "edtalk_env" / "Scripts" / "python.exe"
+        demo_script = edtalk_dir / "demo_EDTalk_A_using_predefined_exp_weights.py"
+        pose_video = edtalk_dir / "test_data" / "pose_source1.mp4"
+        _create_file(python_exe)
+        _create_file(demo_script)
+        _create_file(pose_video)
+
+        def run_side_effect(*args, **kwargs):
+            edtalk_output = edtalk_dir / "res" / f"singer_{out.stem}.mp4"
+            _create_file(edtalk_output, b"\xff" * 500)
+            return MagicMock(returncode=0, stdout="ok", stderr="")
+
+        with patch("src.singer_agent.video_renderer.subprocess.run",
+                   side_effect=run_side_effect), \
+             patch.object(VideoRenderer, "_pre_launch_cleanup"):
+            vr = VideoRenderer(edtalk_dir=edtalk_dir, renderer="edtalk")
+            vr._edtalk_python = python_exe
+            vr._edtalk_demo = demo_script
+            vr._pose_video = pose_video
+            path, mode = vr.render(img, audio, out, exp_type="sad")
+
+        assert mode == "edtalk"
+        assert path == out
+
+    def test_musetalk_renderer_still_works(self, tmp_path):
+        """renderer='musetalk' 仍正確路由至 MuseTalk 管線（不受 V3.0 影響）。"""
+        from src.singer_agent.video_renderer import VideoRenderer
+
+        img = _create_file(tmp_path / "composite.png")
+        audio = _create_file(tmp_path / "audio.mp3")
+        out = tmp_path / "output" / "video.mp4"
+
+        musetalk_dir = tmp_path / "musetalk"
+        python_exe = musetalk_dir / "musetalk_env" / "Scripts" / "python.exe"
+        _create_file(python_exe)
+
+        def run_side_effect(*args, **kwargs):
+            cmd = args[0]
+            for i, arg in enumerate(cmd):
+                if arg == "--result_dir":
+                    rd = Path(cmd[i + 1])
+                    _create_file(rd / "v15" / "output.mp4", b"\xff" * 500)
+            return MagicMock(returncode=0, stdout="ok", stderr="")
+
+        with patch("src.singer_agent.video_renderer.subprocess.run",
+                   side_effect=run_side_effect), \
+             patch.object(VideoRenderer, "_pre_launch_cleanup"):
+            vr = VideoRenderer(musetalk_dir=musetalk_dir, renderer="musetalk")
+            vr._musetalk_python = python_exe
+            vr._musetalk_version = "v15"
+            path, mode = vr.render(img, audio, out)
+
+        assert mode == "musetalk"
+        assert path == out
+
+
+class TestConfigLivePortrait:
+    """config.py 中 LivePortrait 相關路徑常數測試。"""
+
+    def test_liveportrait_dir_is_path(self):
+        """LIVEPORTRAIT_DIR 是 Path 物件。"""
+        from src.singer_agent import config
+        assert isinstance(config.LIVEPORTRAIT_DIR, Path)
+
+    def test_liveportrait_python_includes_liveportrait_env(self):
+        """LIVEPORTRAIT_PYTHON 路徑中包含 'liveportrait_env'。"""
+        from src.singer_agent import config
+        assert "liveportrait_env" in str(config.LIVEPORTRAIT_PYTHON)
+
+    def test_liveportrait_retarget_script_includes_retarget_py(self):
+        """LIVEPORTRAIT_RETARGET_SCRIPT 路徑包含 'liveportrait_retarget.py'。"""
+        from src.singer_agent import config
+        assert "liveportrait_retarget.py" in str(config.LIVEPORTRAIT_RETARGET_SCRIPT)

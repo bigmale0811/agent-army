@@ -57,15 +57,33 @@ EDTALK_DEMO_SCRIPT = EDTALK_DIR / "demo_EDTalk_A_using_predefined_exp_weights.py
 # EDTalk 預設姿態影片
 EDTALK_POSE_VIDEO = EDTALK_DIR / "test_data" / "pose_source1.mp4"
 
-# 渲染引擎選擇（edtalk | musetalk）
-SINGER_RENDERER: str = os.environ.get("SINGER_RENDERER", "edtalk")
+# 渲染引擎選擇（edtalk | musetalk | liveportrait_musetalk）
+# HIGH-02 修復：白名單驗證，非法值降級為預設 edtalk
+_VALID_RENDERERS: frozenset[str] = frozenset({"edtalk", "musetalk", "liveportrait_musetalk"})
+_raw_renderer: str = os.environ.get("SINGER_RENDERER", "edtalk")
+SINGER_RENDERER: str = _raw_renderer if _raw_renderer in _VALID_RENDERERS else "edtalk"
+
+# LivePortrait 安裝目錄（V3.0 表情動態引擎）
+LIVEPORTRAIT_DIR = Path(os.environ.get("LIVEPORTRAIT_DIR", "D:/Projects/LivePortrait"))
+# LivePortrait 虛擬環境 Python（含 torch + onnxruntime）
+LIVEPORTRAIT_PYTHON = LIVEPORTRAIT_DIR / "liveportrait_env" / "Scripts" / "python.exe"
+# LivePortrait retarget 腳本（在 LivePortrait venv 中執行）
+LIVEPORTRAIT_RETARGET_SCRIPT = Path(
+    os.environ.get(
+        "LIVEPORTRAIT_RETARGET_SCRIPT",
+        str(Path(__file__).resolve().parent.parent.parent / "scripts" / "liveportrait_retarget.py"),
+    )
+)
 
 # MuseTalk 安裝目錄（V2.1 高解析度引擎）
 MUSETALK_DIR = Path(os.environ.get("MUSETALK_DIR", "D:/Projects/MuseTalk"))
 # MuseTalk 虛擬環境 Python（含 torch + cu128 + mmcv）
 MUSETALK_PYTHON = MUSETALK_DIR / "musetalk_env" / "Scripts" / "python.exe"
 # MuseTalk 模型版本（v1 或 v15）
-MUSETALK_VERSION: str = os.environ.get("MUSETALK_VERSION", "v15")
+# HIGH-02 修復：白名單驗證
+_VALID_MUSETALK_VERSIONS: frozenset[str] = frozenset({"v1", "v15"})
+_raw_mt_ver: str = os.environ.get("MUSETALK_VERSION", "v15")
+MUSETALK_VERSION: str = _raw_mt_ver if _raw_mt_ver in _VALID_MUSETALK_VERSIONS else "v15"
 
 # FFmpeg 執行檔路徑（用於影片靜態合成降級）
 FFMPEG_BIN = Path(os.environ.get("FFMPEG_BIN", "ffmpeg"))
