@@ -65,6 +65,7 @@ class SongResearcher:
         genre_hint: str = "",
         mood_hint: str = "",
         notes: str = "",
+        lyrics_context: str = "",
         dry_run: bool = False,
     ) -> SongResearch:
         """
@@ -100,6 +101,11 @@ class SongResearcher:
             extra_parts.append(f"Mood hint: {mood_hint}")
         if notes:
             extra_parts.append(f"Notes: {notes}")
+        if lyrics_context:
+            extra_parts.append(
+                f"Lyrics Analysis (use this to generate more accurate "
+                f"background_prompt and outfit_prompt):\n{lyrics_context}"
+            )
         extra = "\n".join(extra_parts)
 
         prompt = _RESEARCH_PROMPT.format(

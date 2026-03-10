@@ -126,9 +126,32 @@ class Pipeline:
 
         current_step = 0  # 步驟追蹤（錯誤時顯示在哪一步失敗）
         try:
-            # Step 1: 歌曲研究
+            # Step 1: 歌曲研究（含歌詞搜尋分析）
             current_step = 1
-            self._notify(1, "歌曲風格研究")
+            self._notify(1, "歌曲風格研究（含歌詞分析）")
+
+            # V3.2: 先搜尋歌詞，分析曲風/故事，作為 research 的額外 context
+            lyrics_context = ""
+            try:
+                from src.singer_agent.lyrics_searcher import LyricsSearcher
+                searcher = LyricsSearcher(dry_run=self.dry_run)
+                lyrics_analysis = searcher.search_and_analyze(
+                    title=request.title,
+                    artist=request.artist,
+                    language=request.language or "zh-TW",
+                )
+                lyrics_context = (
+                    f"Theme: {lyrics_analysis.lyrics_theme}\n"
+                    f"Keywords: {', '.join(lyrics_analysis.lyric_keywords)}\n"
+                    f"Emotion arc: {lyrics_analysis.emotion_arc}\n"
+                    f"Suggested background: "
+                    f"{lyrics_analysis.enhanced_background_prompt}\n"
+                    f"Suggested outfit: {lyrics_analysis.outfit_suggestion}"
+                )
+                _logger.info("歌詞分析完成：%s", lyrics_analysis.lyrics_theme)
+            except Exception as exc:
+                _logger.warning("歌詞搜尋失敗（%s），繼續使用基本研究", exc)
+
             researcher = SongResearcher()
             research = researcher.research(
                 title=request.title,
@@ -137,6 +160,7 @@ class Pipeline:
                 genre_hint=request.genre_hint,
                 mood_hint=request.mood_hint,
                 notes=request.notes,
+                lyrics_context=lyrics_context,
                 dry_run=self.dry_run,
             )
 

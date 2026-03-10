@@ -25,6 +25,9 @@ from src.singer_agent.path_utils import to_ascii_temp, cleanup_temp
 
 _logger = logging.getLogger(__name__)
 
+# 批量 retarget 的預設幀率（後續可被 MuseTalk 直接讀取）
+_DEFAULT_MOTION_FPS: int = 10
+
 
 class LivePortraitAdapter:
     """
@@ -158,3 +161,130 @@ class LivePortraitAdapter:
             output_image, output_image.stat().st_size / 1024,
         )
         return output_image
+
+    def retarget_video(
+        self,
+        source_image: Path,
+        frames: list[LivePortraitExpression],
+        output_dir: Path,
+        fps: int = _DEFAULT_MOTION_FPS,
+    ) -> Path:
+        """
+        批量 retarget：生成帶自然動態的 MP4 影片。
+
+        每幀使用不同的表情參數（blink/eyebrow/head/eye），
+        產出帶自然人體微動的影片。
+
+        Args:
+            source_image: 角色源圖（臉部肖像）
+            frames: 逐幀 LivePortraitExpression 列表
+            output_dir: 中間產物輸出目錄
+            fps: 影片幀率（預設 10fps）
+
+        Returns:
+            帶動態的 MP4 影片路徑
+
+        Raises:
+            FileNotFoundError: LivePortrait venv/腳本不存在
+            RuntimeError: LivePortrait 推論失敗或超時
+        """
+        # 環境檢查
+        if not self._python_bin.exists():
+            raise FileNotFoundError(
+                f"LivePortrait venv Python 不存在：{self._python_bin}"
+            )
+        if not self._retarget_script.exists():
+            raise FileNotFoundError(
+                f"LivePortrait retarget 腳本不存在：{self._retarget_script}"
+            )
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # 處理非 ASCII 路徑
+        ascii_img = to_ascii_temp(source_image)
+
+        # 建構批量 JSON 配置
+        frames_dicts = [asdict(f) for f in frames]
+        batch_config = {
+            "source": str(ascii_img).replace("\\", "/"),
+            "output_dir": str(output_dir).replace("\\", "/"),
+            "mode": "batch",
+            "fps": fps,
+            "frames": frames_dicts,
+        }
+
+        config_path = output_dir / "retarget_batch_config.json"
+        config_path.write_text(
+            json.dumps(batch_config, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        _logger.info(
+            "LivePortrait 批量 retarget 開始：%d 幀 @ %dfps（%.1fs 影片），"
+            "source=%s",
+            len(frames), fps, len(frames) / fps, source_image.name,
+        )
+
+        cmd = [
+            str(self._python_bin),
+            str(self._retarget_script),
+            "--config", str(config_path),
+        ]
+
+        # 批量模式超時：模型載入 + 每幀 ~0.2s
+        batch_timeout = 600 + len(frames) * 1
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=batch_timeout,
+                cwd=str(self.liveportrait_dir),
+            )
+        except subprocess.TimeoutExpired:
+            _logger.error(
+                "LivePortrait 批量 retarget 超時（>%ds，%d 幀）",
+                batch_timeout, len(frames),
+            )
+            raise RuntimeError(
+                f"LivePortrait 批量 retarget 超時"
+                f"（>{batch_timeout}s，{len(frames)} 幀）"
+            )
+        finally:
+            cleanup_temp(ascii_img)
+
+        # 記錄 subprocess 輸出（含進度資訊）
+        if result.stdout:
+            for line in result.stdout.strip().split("\n")[-10:]:
+                _logger.debug("LP stdout: %s", line)
+        if result.returncode != 0:
+            _logger.error(
+                "LivePortrait 批量 retarget 失敗（exit=%d）：%s",
+                result.returncode,
+                result.stderr[-500:] if result.stderr else "無 stderr",
+            )
+            raise RuntimeError(
+                f"LivePortrait 批量 retarget 失敗"
+                f"（exit={result.returncode}）"
+            )
+
+        # 尋找產出 MP4
+        output_video = output_dir / "motion.mp4"
+        if not output_video.exists():
+            mp4s = list(output_dir.glob("*.mp4"))
+            if not mp4s:
+                raise RuntimeError(
+                    f"LivePortrait 批量 retarget 未產出影片"
+                    f"（搜尋：{output_dir}）"
+                )
+            output_video = mp4s[0]
+
+        size_mb = output_video.stat().st_size / (1024 ** 2)
+        _logger.info(
+            "LivePortrait 批量 retarget 完成：%s（%.1f MB，%d 幀）",
+            output_video, size_mb, len(frames),
+        )
+        return output_video

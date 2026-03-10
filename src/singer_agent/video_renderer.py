@@ -13,6 +13,11 @@ V3.0 變更：
 - 新增 LivePortrait + MuseTalk 混合管線（表情注入 + 嘴唇同步）
 - LivePortrait 僅產出帶表情的靜態 PNG，再由 MuseTalk 驅動嘴唇
 - VRAM 分時管控：兩模型不同時載入
+
+V3.1 變更：
+- LivePortrait 改為產出帶自然動態的 MP4 影片（眨眼、頭部擺動、眉毛）
+- MuseTalk 以動態影片為輸入（非靜態圖片），實現表情+嘴唇同步
+- 新增 NaturalMotionEngine 生成逐幀表情參數序列
 """
 import logging
 import shutil
@@ -412,26 +417,34 @@ class VideoRenderer:
         exp_type: str = "neutral",
     ) -> tuple[Path, str]:
         """
-        V3.0 混合管線：LivePortrait 表情注入 + MuseTalk 嘴唇同步。
+        V3.1 混合管線：LivePortrait 自然動態影片 + MuseTalk 嘴唇同步。
 
-        Phase A: LivePortrait retarget（~15s, ~1.5GB VRAM）
+        Phase A: LivePortrait 批量 retarget（自然動態影片，~1.5GB VRAM）
+          - NaturalMotionEngine 生成逐幀表情參數（眨眼/頭部/眉毛/眼球）
+          - LivePortrait 批量 retarget 產出 motion.mp4
         閘門:    VRAM 安全檢查 + 強制清理
-        Phase B: MuseTalk inference（~25min, ~8.2GB VRAM）
+        Phase B: MuseTalk inference（以動態影片為輸入，~8.2GB VRAM）
 
         降級策略：
-        - LivePortrait 失敗 → 跳過表情，直接用原圖餵 MuseTalk
+        - LivePortrait 失敗 → 跳過動態，直接用靜態原圖餵 MuseTalk
         - MuseTalk 也失敗 → fallback 為 EDTalk
         """
         from src.singer_agent.audio_preprocessor import EMOTION_LIVEPORTRAIT_MAP
         from src.singer_agent.liveportrait_adapter import LivePortraitAdapter
-
-        _logger.info(
-            "開始 LivePortrait+MuseTalk 混合管線（exp_type=%s）", exp_type,
+        from src.singer_agent.natural_motion import (
+            NaturalMotionEngine,
+            get_audio_duration_seconds,
         )
 
-        # Phase A: LivePortrait 表情注入
-        intermediate_image = composite_image  # 降級預設：使用原圖
-        lp_output_dir: Path | None = None  # 追蹤暫存目錄，確保清理
+        _logger.info(
+            "開始 LivePortrait+MuseTalk V3.1 管線（exp_type=%s）", exp_type,
+        )
+
+        # Phase A: LivePortrait 自然動態影片
+        # 降級預設：使用靜態原圖（與 V3.0 相同行為）
+        intermediate_source = composite_image
+        lp_output_dir: Path | None = None
+        use_motion_video = False
 
         try:
             self._pre_launch_cleanup()
@@ -440,37 +453,64 @@ class VideoRenderer:
                 liveportrait_dir=self.liveportrait_dir,
             )
 
-            # 取得表情參數
-            expression = EMOTION_LIVEPORTRAIT_MAP.get(
+            # 取得基礎表情參數（來自情緒映射）
+            base_expression = EMOTION_LIVEPORTRAIT_MAP.get(
                 exp_type, EMOTION_LIVEPORTRAIT_MAP["neutral"],
             )
 
-            # 建立暫存目錄（使用模組層級 tempfile，避免重複 import）
+            # 取得音訊時長
+            duration = get_audio_duration_seconds(str(audio_path))
+            _logger.info("音訊時長：%.1f 秒", duration)
+
+            # 生成自然動作序列（10fps，後續由 MuseTalk 處理）
+            motion_fps = 10
+            engine = NaturalMotionEngine(seed=42)
+            motion_frames = engine.generate_sequence(
+                duration_seconds=duration,
+                fps=motion_fps,
+                base_expression=base_expression,
+            )
+
+            _logger.info(
+                "自然動作序列已生成：%d 幀 @ %dfps",
+                len(motion_frames), motion_fps,
+            )
+
+            # 建立暫存目錄
             lp_output_dir = Path(tempfile.mkdtemp(prefix="liveportrait_"))
 
-            intermediate_image = adapter.retarget(
+            # 批量 retarget → 動態影片
+            motion_video = adapter.retarget_video(
                 source_image=composite_image,
-                expression=expression,
+                frames=motion_frames,
                 output_dir=lp_output_dir,
+                fps=motion_fps,
             )
+
+            intermediate_source = motion_video
+            use_motion_video = True
             _logger.info(
-                "LivePortrait 表情注入完成：%s", intermediate_image,
+                "LivePortrait 動態影片完成：%s", motion_video,
             )
+
         except Exception as exc:
             _logger.warning(
-                "LivePortrait 失敗（%s），降級為純 MuseTalk（無表情）", exc,
+                "LivePortrait 動態影片失敗（%s），降級為靜態圖片 MuseTalk",
+                exc,
             )
-            # intermediate_image 保持為原始 composite_image
+            # intermediate_source 保持為原始 composite_image
 
         # VRAM 閘門：Phase A → Phase B
         self._vram_gate("LivePortrait -> MuseTalk")
 
-        # Phase B: MuseTalk 嘴唇同步（複用既有方法）
+        # Phase B: MuseTalk 嘴唇同步
         try:
-            return self._render_musetalk(
-                intermediate_image, audio_path, output_path,
+            result = self._render_musetalk(
+                intermediate_source, audio_path, output_path,
                 exp_type=exp_type,
             )
+            render_mode = "liveportrait_musetalk" if use_motion_video else "musetalk"
+            return result[0], render_mode
         except Exception as exc:
             _logger.warning(
                 "MuseTalk 失敗（%s），降級為 EDTalk", exc,

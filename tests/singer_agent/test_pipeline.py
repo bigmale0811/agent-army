@@ -218,7 +218,8 @@ class TestPipelineErrorHandling:
             result = p.run(req)
 
         assert result.status == "failed"
-        assert "LLM 離線" in result.error_message
+        # HIGH-03 修復後：錯誤訊息不洩漏內部細節，只顯示異常類型
+        assert "RuntimeError" in result.error_message
 
     def test_step_failure_does_not_raise(self, tmp_path):
         """步驟失敗不拋出例外到呼叫方。"""

@@ -884,7 +884,7 @@ class TestRenderLivePortraitMusetalk:
         return vr, lp_dir, musetalk_dir
 
     def test_full_pipeline_success(self, tmp_path):
-        """LivePortrait + MuseTalk 全管線成功時回傳 'musetalk' 模式。"""
+        """V3.1: LivePortrait 動態影片 + MuseTalk 全管線成功。"""
         from src.singer_agent.audio_preprocessor import LivePortraitExpression
 
         img = _create_file(tmp_path / "composite.png")
@@ -892,11 +892,12 @@ class TestRenderLivePortraitMusetalk:
         out = tmp_path / "output" / "video.mp4"
         vr, lp_dir, musetalk_dir = self._make_renderer(tmp_path)
 
-        retargeted_png = tmp_path / "lp_out" / "retargeted.png"
-        _create_file(retargeted_png, b"\xff" * 100)
+        # V3.1: retarget_video 回傳動態影片路徑
+        motion_video = tmp_path / "lp_out" / "motion.mp4"
+        _create_file(motion_video, b"\xff" * 200)
 
         mock_adapter = MagicMock()
-        mock_adapter.retarget.return_value = retargeted_png
+        mock_adapter.retarget_video.return_value = motion_video
 
         def musetalk_side_effect(*args, **kwargs):
             cmd = args[0]
@@ -906,19 +907,22 @@ class TestRenderLivePortraitMusetalk:
                     _create_file(rd / "v15" / "output.mp4", b"\xff" * 500)
             return MagicMock(returncode=0, stdout="ok", stderr="")
 
-        # LivePortraitAdapter 是在方法內部 import，須 patch 原始模組
+        # V3.1: 需額外 mock NaturalMotionEngine + get_audio_duration_seconds
         with patch("src.singer_agent.liveportrait_adapter.LivePortraitAdapter",
                    return_value=mock_adapter), \
              patch("src.singer_agent.video_renderer.subprocess.run",
                    side_effect=musetalk_side_effect), \
+             patch("src.singer_agent.natural_motion.get_audio_duration_seconds",
+                   return_value=10.0), \
              patch.object(type(vr), "_pre_launch_cleanup"), \
              patch.object(type(vr), "_vram_gate"):
             path, mode = vr.render(img, audio, out, exp_type="happy")
 
-        assert mode == "musetalk"
+        # V3.1: 動態影片成功時回傳 "liveportrait_musetalk"
+        assert mode == "liveportrait_musetalk"
         assert path == out
         assert out.exists()
-        mock_adapter.retarget.assert_called_once()
+        mock_adapter.retarget_video.assert_called_once()
 
     def test_liveportrait_failure_degrades_to_pure_musetalk(self, tmp_path):
         """LivePortrait 失敗時降級為純 MuseTalk（使用原始圖片）。"""
