@@ -1,4 +1,7 @@
-"""CLI 入口 — Click 命令列介面"""
+"""CLI 入口 — Click 命令列介面
+
+支援互動模式和持久化瀏覽器 profile，解決 Token 認證問題。
+"""
 from __future__ import annotations
 import asyncio
 import logging
@@ -18,6 +21,9 @@ def _build_orchestrator(
     registry: PluginRegistry,
     url: str,
     output_dir: Path,
+    *,
+    interactive: bool = False,
+    browser_profile: str | None = None,
 ) -> PipelineOrchestrator:
     """建構 Pipeline，將各 Phase handler 連接到 Orchestrator"""
     from slot_cloner.report.builder import ReportBuilder
@@ -27,18 +33,25 @@ def _build_orchestrator(
     report_builder = ReportBuilder()
     game_builder = GameBuilder(skip_npm=True)  # MVP 先跳過 npm build
 
+    # 傳遞互動模式和瀏覽器 profile 給 Adapter
+    scrape_kwargs: dict = {"output_dir": output_dir}
+    if interactive:
+        scrape_kwargs["interactive"] = True
+    if browser_profile:
+        scrape_kwargs["browser_profile"] = browser_profile
+
     async def recon_handler(ctx: PipelineContext) -> PipelineContext:
         """Phase 1: 偵察"""
         fingerprint = await adapter.recon(ctx.url)
         return ctx.model_copy(update={"fingerprint": fingerprint})
 
     async def scrape_handler(ctx: PipelineContext) -> PipelineContext:
-        """Phase 2: 資源擷取"""
-        assets = await adapter.scrape(ctx.fingerprint, output_dir=ctx.output_dir)
+        """Phase 2: 資源擷取（統一 Session — 同時攔截 WS）"""
+        assets = await adapter.scrape(ctx.fingerprint, **scrape_kwargs)
         return ctx.model_copy(update={"assets": assets})
 
     async def reverse_handler(ctx: PipelineContext) -> PipelineContext:
-        """Phase 3: 逆向分析"""
+        """Phase 3: 逆向分析（使用 Scraper 預捕獲的 WS 資料）"""
         game_model = await adapter.reverse(ctx.fingerprint, ctx.assets)
         return ctx.model_copy(update={"game_model": game_model})
 
@@ -85,6 +98,8 @@ def main():
     help="只執行指定 Phase（逗號分隔，如 recon,scrape）",
 )
 @click.option("--verbose", is_flag=True, help="顯示詳細日誌")
+@click.option("--interactive", is_flag=True, help="互動模式（開啟可見瀏覽器，可手動處理認證）")
+@click.option("--browser-profile", default=None, help="瀏覽器 profile 路徑（保留 Cookie/Session）", type=click.Path())
 def clone(
     url: str,
     name: str,
@@ -95,14 +110,24 @@ def clone(
     adapter: str | None,
     phases: str | None,
     verbose: bool,
+    interactive: bool,
+    browser_profile: str | None,
 ) -> None:
     """Clone 一個老虎機遊戲
 
-    範例：python -m slot_cloner clone https://play.example.com/game --name my-game
+    範例：
+      python -m slot_cloner clone https://play.example.com/game --name my-game
+      python -m slot_cloner clone URL --name my-game --interactive  # 互動模式處理認證
+      python -m slot_cloner clone URL --name my-game --browser-profile ./profile  # 保留 session
     """
     # 設定 logging
     log_level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(level=log_level, format="%(levelname)s | %(name)s | %(message)s")
+
+    if interactive:
+        logging.getLogger("slot_cloner").info("🎮 互動模式已啟用 — 瀏覽器將以可見方式開啟")
+    if browser_profile:
+        logging.getLogger("slot_cloner").info("📂 瀏覽器 profile: %s", browser_profile)
 
     # 解析 phases 參數
     target_phases = None
@@ -137,8 +162,12 @@ def clone(
     registry = PluginRegistry()
     registry.register(ATGAdapter)
 
-    # 建立並執行 Pipeline
-    orchestrator = _build_orchestrator(registry, url, output_path)
+    # 建立並執行 Pipeline（傳遞互動模式和瀏覽器 profile）
+    orchestrator = _build_orchestrator(
+        registry, url, output_path,
+        interactive=interactive,
+        browser_profile=browser_profile,
+    )
 
     try:
         result = asyncio.run(orchestrator.run(context, phases=target_phases))

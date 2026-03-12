@@ -1,5 +1,7 @@
 """資源相關資料模型"""
+from __future__ import annotations
 from pathlib import Path
+from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 
@@ -55,3 +57,5 @@ class AssetBundle(BaseModel):
     sprites: tuple[SpriteSheet, ...] = ()
     audio: tuple[AudioAsset, ...] = ()
     raw_configs: dict[str, object] = {}
+    # Scraper 同 session 攔截到的 WS 訊息（傳給 ReverseEngine 用）
+    ws_messages: tuple[dict[str, Any], ...] = ()

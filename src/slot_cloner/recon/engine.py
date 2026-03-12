@@ -16,12 +16,44 @@ class ReconEngine:
         self._timeout_ms = timeout_ms
 
     async def recon(self, url: str) -> GameFingerprint:
-        """執行偵察，回傳遊戲技術指紋"""
+        """執行偵察，回傳遊戲技術指紋
+
+        注意：使用 init_script 阻擋遊戲 WS 連線，
+        避免消耗一次性 Token（如 ATG 的 Demo Token）。
+        只攔截 URL 資訊，不建立真正的 WS 連線。
+        """
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=self._headless)
             try:
-                page = await browser.new_page()
-                # 收集 WebSocket URL
+                context = await browser.new_context()
+
+                # 阻擋遊戲 WS 連線，避免消耗一次性 Token
+                await context.add_init_script("""
+                    (() => {
+                        const OrigWS = window.WebSocket;
+                        const blocked = [];
+                        window.WebSocket = function(url, ...args) {
+                            blocked.push(url);
+                            window.__blocked_ws_urls = blocked;
+                            return {
+                                send: ()=>{}, close: ()=>{},
+                                addEventListener: ()=>{},
+                                onopen: null, onmessage: null,
+                                onclose: null, onerror: null,
+                                readyState: 0,
+                                CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3,
+                            };
+                        };
+                        window.WebSocket.prototype = OrigWS.prototype;
+                        window.WebSocket.CONNECTING = 0;
+                        window.WebSocket.OPEN = 1;
+                        window.WebSocket.CLOSING = 2;
+                        window.WebSocket.CLOSED = 3;
+                    })();
+                """)
+
+                page = await context.new_page()
+                # 收集被攔截的 WebSocket URL
                 ws_urls: list[str] = []
                 page.on("websocket", lambda ws: ws_urls.append(ws.url))
 
@@ -66,6 +98,13 @@ class ReconEngine:
                     return result;
                 }""")
 
+                # 從被阻擋的 WS 中取得 URL
+                blocked_ws = await page.evaluate(
+                    "window.__blocked_ws_urls || []"
+                )
+                if blocked_ws:
+                    logger.info("偵測到 %d 個 WS 連線（已阻擋以保護 Token）", len(blocked_ws))
+
                 # 從 URL 參數推斷遊戲類型
                 game_type = self._detect_game_type(url)
 
@@ -76,7 +115,7 @@ class ReconEngine:
                     game_type=game_type,
                     canvas_detected=fingerprint_data.get("has_canvas", False),
                     webgl_detected=fingerprint_data.get("has_webgl", False),
-                    websocket_urls=tuple(ws_urls),
+                    websocket_urls=tuple(ws_urls or blocked_ws),
                     js_bundle_urls=tuple(js_urls),
                 )
             finally:

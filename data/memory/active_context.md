@@ -1,52 +1,51 @@
 # 🧠 Active Context
-更新：2026-03-12 Stage 6 PASS → 🏁 完成
+更新：2026-03-12 第五輪突破 — ATG Token 完全破解！
 
 ## 🎰 老虎機遊戲 Clone & 生產線工具
 
-### FSM 狀態：🏁 完成！已 Git Commit
-- Stage 1 ✅ 需求釐清完成
-- Stage 2 ✅ 架構設計完成
-- Stage 3&4 ✅ Sprint 1~4 全部完成（147 tests + TS build）
-- Stage 5 ✅ 審查完成（安全修復）
-- Stage 6 ✅ PASS → commit `f59c755` (106 files, 8661 lines)
+### FSM 狀態：🟢🟢🟢 第五輪突破 — Token 破解 + Pipeline 全通！
+- Stage 1~6 ✅ 基礎框架 → commit `f59c755`（尚未 commit 第二~五輪修復）
+- 第二輪修復 ✅ → Socket.IO + Cocos Creator + Spin 觸發
+- 第三輪修復 ✅ → 統一 Session + --interactive + --browser-profile
+- 第四輪強化 ✅ → Token 401 自動偵測 + 互動導航引導
+- **第五輪突破 ✅ → ATG Demo Token 自動生成 + ReconEngine WS 阻擋 + Pipeline 全通！**
 
-### Sprint 1 ✅ 完成 (83 → 124 tests)
-- DEV-1.1~1.6 全部完成（模型/Pipeline/Plugin/Storage/CLI）
+### 🏆 第五輪突破成果
+- [x] ATG Demo API 發現：`api.godeebxp.com/trail/egyptian-mythology`
+- [x] 從 ATG 官網自動取得新鮮 Token（無需 CEO 手動操作）
+- [x] ReconEngine 加入 WS 阻擋（add_init_script 覆寫 WebSocket）
+- [x] Token 不再被 RECON 消耗 → SCRAPE 認證成功
+- [x] Pipeline 全 4 Phase 通過：recon → scrape → reverse → report
+- [x] **41 則 WS 訊息、30 個 Spin 結果、286 圖片、4 音效、209 設定檔**
+- [x] 174 tests ALL PASSED
 
-### Sprint 2 ✅ MVP 完成 (124 tests + TS build)
-- DEV-2.1 ✅ ReconEngine + ATG Adapter（Playwright 偵察 + 技術指紋）
-- DEV-2.2 ✅ ScraperEngine + SpriteSplitter（Network 攔截 + Pillow 拆解）
-- DEV-2.3 ✅ ReverseEngine + WSAnalyzer + JSAnalyzer + PaytableParser（4 層逆向）
-- DEV-2.4 ✅ ReportBuilder（Jinja2 Markdown 報告 + JSON）
-- DEV-2.5 ✅ ConfigGenerator（GameModel → game-config.json）
-- DEV-2.6 ✅ PixiJS v8 遊戲引擎（TypeScript + Vite）
-  - CascadeGrid（BFS cluster 偵測 + 消除掉落）
-  - PaytableEngine（賠率計算 + Wild 替代）
-  - RNG（crypto.getRandomValues）
-  - HUD + SpinButton
-  - Vite build 成功 ✅，TypeScript 零錯誤 ✅
-- DEV-2.7 ✅ GameBuilder（模板複製 + config 注入 + npm build）
+### 🔑 ATG Token 機制（完全破解！）
+- Token 由 `api.godeebxp.com/trail/{game}` API 生成
+- ATG 官網 "DEMO PLAY" 按鈕呼叫 `window.open()` 觸發此 API
+- Token 在 WS `initial` 訊息發送時被消耗（一次性）
+- **解法**：ReconEngine 用 `add_init_script` 阻擋 WS → Token 保鮮到 SCRAPE
 
-### 驗證結果
-- `python -m pytest tests/slot_cloner/` → **124 passed** ✅
-- `npx tsc --noEmit` → **零錯誤** ✅
-- `npx vite build` → **built in 1.65s** ✅
-- CLI `--dry-run` → **5 Phase 全部跑通** ✅（ATG Adapter 自動識別）
+### 真實 URL 測試 — 第二輪結果（大幅改善！）
+| Phase | 第一輪 | 第二輪 | 改善 |
+|-------|--------|--------|------|
+| RECON | ✅ | ✅ | — |
+| SCRAPE | ✅ 285img | ✅ 285img | — |
+| REVERSE | ❌ 0 符號 | ✅ **30 符號** | 🎯 從 0→30 |
+| REPORT | ✅ | ✅ | 內容更豐富 |
+| BUILD | ❌ 參數錯 | ⏭️ skip | CLI 已正確 |
 
-### Sprint 3 進行中
-- DEV-3.1 ✅ Free Spin 系統（FreeSpinFeature.ts — scatter 偵測 + 觸發 + 重觸發 + 消耗）
-- DEV-3.2 ✅ Multiplier 系統（MultiplierFeature.ts — 收集 + 累加 + 有效乘數）
-- Game.ts 重構：GameState 狀態機 + 整合 FreeSpin + Multiplier
-- HUD.ts 擴充：showFreeSpin / hideFreeSpin
-- TypeScript 零錯誤 ✅，Python 124 tests ✅
-- DEV-3.3 動畫系統（待做）
-- DEV-3.4 音效系統（待做）
-- DEV-3.5 Report 強化（待做）
-- DEV-3.6 Audio 強化（待做）
+### 提取到的 30 個符號
+- 特殊：Wild, Scatter, Multiplier, FreeSpin
+- 高價值：Ra, Eye, Scarab（埃及神話主題）
+- 一般：symbol_01~18, icon_01~02
+- 撲克牌：10
 
-### 或者可選：先做 Pipeline 整合測試
-- 手動錄製 ATG fixture（WS 訊息 + Sprite Sheet）
-- 用真實 ATG URL 跑完整 Pipeline
+### 🔐 Token 認證問題 → 已有解法！
+- WS Spin 觸發成功 → 但回應 **401: Token 過期**
+- **解法 1**: `--interactive` → 開可見瀏覽器，使用者手動處理認證
+- **解法 2**: `--browser-profile ./profile` → 持久化 Cookie，只需登入一次
+- **解法 3**: 統一 Session 架構 → Scraper 同時攔截 WS，Token 不會被二次消耗
+- **待 CEO 提供新鮮 URL 測試**
 
 ### CEO 確認的決策
 1. **範圍**：先做 Clone 工具，換皮留 Phase 2
