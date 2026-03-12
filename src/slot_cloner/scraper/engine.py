@@ -149,13 +149,39 @@ class ScraperEngine:
 
                 # === 2. WebSocket 攔截（統一 Session 核心！） ===
                 def on_ws(ws):
-                    """攔截所有 WebSocket 訊息"""
+                    """攔截所有 WebSocket 訊息（含 binary zlib 解壓）"""
+                    def _decode_binary(data: bytes) -> str:
+                        """嘗試 zlib 解壓 binary WS frame（Socket.IO 壓縮格式）"""
+                        import zlib
+                        for wbits in [15, -15, 31, 47]:
+                            try:
+                                text = zlib.decompress(data, wbits).decode(
+                                    "utf-8", errors="replace"
+                                )
+                                logger.debug(
+                                    "WS binary 解壓成功 (%d→%d bytes, wbits=%d)",
+                                    len(data), len(text), wbits,
+                                )
+                                return text
+                            except Exception:
+                                pass
+                        return data.hex()
+
                     def on_frame_received(data):
-                        ws_messages.append({
-                            "direction": "received",
-                            "raw": data if isinstance(data, str) else data.hex(),
-                            "url": ws.url,
-                        })
+                        if isinstance(data, bytes):
+                            decoded = _decode_binary(data)
+                            ws_messages.append({
+                                "direction": "received",
+                                "raw": decoded,
+                                "url": ws.url,
+                            })
+                        else:
+                            ws_messages.append({
+                                "direction": "received",
+                                "raw": data,
+                                "url": ws.url,
+                            })
+
                     def on_frame_sent(data):
                         ws_messages.append({
                             "direction": "sent",

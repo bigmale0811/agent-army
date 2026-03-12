@@ -85,7 +85,7 @@ def main():
 
 
 @main.command()
-@click.argument("url")
+@click.argument("url", required=False, default=None)
 @click.option("--name", required=True, help="遊戲名稱")
 @click.option("--output", default="./output", help="輸出目錄", type=click.Path())
 @click.option("--dry-run", is_flag=True, help="乾跑模式（不執行實際操作）")
@@ -100,8 +100,13 @@ def main():
 @click.option("--verbose", is_flag=True, help="顯示詳細日誌")
 @click.option("--interactive", is_flag=True, help="互動模式（開啟可見瀏覽器，可手動處理認證）")
 @click.option("--browser-profile", default=None, help="瀏覽器 profile 路徑（保留 Cookie/Session）", type=click.Path())
+@click.option(
+    "--demo",
+    default=None,
+    help="ATG Demo 模式（自動從官網取得新鮮 Token，如 --demo storm-of-seth）",
+)
 def clone(
-    url: str,
+    url: str | None,
     name: str,
     output: str,
     dry_run: bool,
@@ -112,22 +117,35 @@ def clone(
     verbose: bool,
     interactive: bool,
     browser_profile: str | None,
+    demo: str | None,
 ) -> None:
     """Clone 一個老虎機遊戲
 
     範例：
       python -m slot_cloner clone https://play.example.com/game --name my-game
+      python -m slot_cloner clone --demo storm-of-seth --name seth  # 自動取得 Demo URL
       python -m slot_cloner clone URL --name my-game --interactive  # 互動模式處理認證
-      python -m slot_cloner clone URL --name my-game --browser-profile ./profile  # 保留 session
     """
     # 設定 logging
     log_level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(level=log_level, format="%(levelname)s | %(name)s | %(message)s")
+    cli_logger = logging.getLogger("slot_cloner.cli")
+
+    # Demo 模式：自動從 ATG 官網取得新鮮 Token URL
+    if demo:
+        from slot_cloner.plugins.atg.demo_launcher import get_demo_url
+
+        cli_logger.info("🎮 Demo 模式: 從 ATG 官網取得 %s 的新鮮 Token...", demo)
+        url = asyncio.run(get_demo_url(game=demo))
+        cli_logger.info("✅ Demo URL: %s", url[:80] + "...")
+
+    if not url:
+        raise click.UsageError("必須提供 URL 或使用 --demo 指定遊戲名稱")
 
     if interactive:
-        logging.getLogger("slot_cloner").info("🎮 互動模式已啟用 — 瀏覽器將以可見方式開啟")
+        cli_logger.info("🎮 互動模式已啟用 — 瀏覽器將以可見方式開啟")
     if browser_profile:
-        logging.getLogger("slot_cloner").info("📂 瀏覽器 profile: %s", browser_profile)
+        cli_logger.info("📂 瀏覽器 profile: %s", browser_profile)
 
     # 解析 phases 參數
     target_phases = None
