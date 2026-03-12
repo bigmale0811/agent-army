@@ -1,0 +1,75 @@
+{
+    "game": {
+        "name": "storm-of-seth",
+        "displayName": "Storm of Seth",
+        "type": "cascade",
+        "grid": { "cols": 6, "rows": 5 },
+        "rtp": 96.89,
+        "maxMultiplier": 51000,
+        "minBet": 1,
+        "maxBet": 1000
+    },
+    "symbols": [
+        { "id": "anubis", "name": "Anubis", "type": "regular", "image": "anubis.png", "payouts": { "8": 1.0, "10": 2.5, "12": 10.0, "15": 25.0 } },
+        { "id": "eye_of_ra", "name": "Eye of Ra", "type": "regular", "image": "eye_of_ra.png", "payouts": { "8": 0.8, "10": 2.0, "12": 8.0, "15": 20.0 } },
+        { "id": "scarab", "name": "Scarab", "type": "regular", "image": "scarab.png", "payouts": { "8": 0.6, "10": 1.5, "12": 6.0, "15": 15.0 } },
+        { "id": "ankh", "name": "Ankh", "type": "regular", "image": "ankh.png", "payouts": { "8": 0.5, "10": 1.2, "12": 5.0, "15": 12.0 } },
+        { "id": "staff", "name": "Staff", "type": "regular", "image": "staff.png", "payouts": { "8": 0.4, "10": 1.0, "12": 4.0, "15": 10.0 } },
+        { "id": "gem_blue", "name": "Blue Gem", "type": "regular", "image": "gem_blue.png", "payouts": { "8": 0.3, "10": 0.8, "12": 3.0 } },
+        { "id": "gem_green", "name": "Green Gem", "type": "regular", "image": "gem_green.png", "payouts": { "8": 0.3, "10": 0.8, "12": 3.0 } },
+        { "id": "gem_red", "name": "Red Gem", "type": "regular", "image": "gem_red.png", "payouts": { "8": 0.3, "10": 0.8, "12": 3.0 } },
+        { "id": "wild", "name": "Wild", "type": "wild", "image": "wild.png", "payouts": {} },
+        { "id": "scatter", "name": "Scatter", "type": "scatter", "image": "scatter.png", "payouts": {} }
+    ],
+    "paytable": {
+        "minClusterSize": 8,
+        "entries": [
+            { "symbolId": "anubis", "minCount": 8, "multiplier": 1.0 },
+            { "symbolId": "anubis", "minCount": 10, "multiplier": 2.5 },
+            { "symbolId": "anubis", "minCount": 12, "multiplier": 10.0 },
+            { "symbolId": "anubis", "minCount": 15, "multiplier": 25.0 },
+            { "symbolId": "eye_of_ra", "minCount": 8, "multiplier": 0.8 },
+            { "symbolId": "eye_of_ra", "minCount": 10, "multiplier": 2.0 },
+            { "symbolId": "eye_of_ra", "minCount": 12, "multiplier": 8.0 },
+            { "symbolId": "scarab", "minCount": 8, "multiplier": 0.6 },
+            { "symbolId": "scarab", "minCount": 10, "multiplier": 1.5 },
+            { "symbolId": "scarab", "minCount": 12, "multiplier": 6.0 }
+        ]
+    },
+    "features": {
+        "wild": {
+            "enabled": true,
+            "symbolId": "wild",
+            "substitutesAll": true,
+            "exceptSymbols": ["scatter"]
+        },
+        "scatter": {
+            "enabled": true,
+            "symbolId": "scatter",
+            "triggerCount": 4,
+            "freeSpinsAwarded": 15
+        },
+        "cascade": {
+            "enabled": true,
+            "minClusterSize": 8,
+            "fillFromTop": true
+        },
+        "multiplier": {
+            "enabled": true,
+            "values": [2, 3, 5, 10, 25, 50, 100, 500],
+            "accumulateInCascade": true
+        },
+        "freeSpin": {
+            "enabled": true,
+            "baseSpins": 15,
+            "retriggerEnabled": true,
+            "retriggerSpins": 5
+        }
+    },
+    "assets": {
+        "basePath": "./assets/",
+        "imagesPath": "./assets/images/",
+        "audioPath": "./assets/audio/",
+        "spritesPath": "./assets/sprites/"
+    }
+}
