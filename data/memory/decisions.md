@@ -6,6 +6,9 @@
 - [2026-03-08] HR 招募：@Technology-Scout（技術探勘者）— CEO 指令，建立 R&D 研發部門
 - [2026-03-08] 系統憲法更新：加入「技術碰壁協議」— Stage 6 失敗 3 次強制暫停，轉交 Scout 探勘替代方案
 - [2026-03-08] 碰壁協議核心規則：Scout 只寫 PoC → 精算師 VRAM 攻擊 → 架構師整合 → 回到 Stage 2
+- [2026-03-11] HR 招募顧問團（CEO 指派）：3D 動畫顧問 + 2D 動態顧問 + Talking Head 工具顧問
+- [2026-03-11] 技術碰壁協議正式啟動：2D warpAffine 天花板，CEO 判定「圖片在轉不是人在動」
+- [2026-03-11] CEO 決策：嘴型品質不能再降（MuseTalk 是底線），先探勘再決定方案
 - [2026-03-04] 三個 Telegram Bot 各自獨立運作：Reading Bot、Japan Intel Bot、Singer Bot
 - [2026-03-05] 建立 Memory System（跨對話記憶），存放在 data/memory/，CLAUDE.md 要求每次對話開頭先讀取
 - [2026-03-06] **ECC 流程違規教訓**：開發 LLM 模組 + Setup Wizard 時跳過 Plan/TDD/Review/Verify，導致 5 個 bug 到使用者手上。未來所有開發必須嚴格遵循 Phase 0-7，即使使用者催促也不可省略

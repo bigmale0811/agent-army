@@ -1,69 +1,96 @@
 # 🧠 Active Context
-更新：2026-03-11 07:00
+更新：2026-03-12 Stage 6 PASS → 🏁 完成
 
-## 🏁 Singer V3.1 — 第一期 + 第二期開發完成！
+## 🎰 老虎機遊戲 Clone & 生產線工具
 
-### 第一期：自然動態引擎 ✅
-| 項目 | 狀態 | 說明 |
-|------|------|------|
-| LivePortrait 靜默失敗 bug 修復 | ✅ | 分離 head pose + expression delta 的 try-except |
-| NaturalMotionEngine | ✅ | `natural_motion.py` 眨眼/頭部/眉毛/眼球 |
-| 批量 retarget 模式 | ✅ | `liveportrait_retarget.py` batch mode → MP4 影片 |
-| LivePortraitAdapter.retarget_video() | ✅ | subprocess 批量呼叫 |
-| VideoRenderer V3.1 整合 | ✅ | 動態影片 → MuseTalk 嘴唇同步 |
-| 測試 | ✅ | 464/464 通過 |
+### FSM 狀態：🏁 完成！已 Git Commit
+- Stage 1 ✅ 需求釐清完成
+- Stage 2 ✅ 架構設計完成
+- Stage 3&4 ✅ Sprint 1~4 全部完成（147 tests + TS build）
+- Stage 5 ✅ 審查完成（安全修復）
+- Stage 6 ✅ PASS → commit `f59c755` (106 files, 8661 lines)
 
-### 第二期：智慧 MV（歌詞+背景）✅
-| 項目 | 狀態 | 說明 |
-|------|------|------|
-| LyricsSearcher | ✅ | `lyrics_searcher.py` Ollama 歌詞分析 |
-| SongResearcher 整合 | ✅ | `lyrics_context` 參數注入更好的背景/服裝提示 |
-| Pipeline 整合 | ✅ | Step 1 自動呼叫歌詞分析 |
+### Sprint 1 ✅ 完成 (83 → 124 tests)
+- DEV-1.1~1.6 全部完成（模型/Pipeline/Plugin/Storage/CLI）
 
-### 新增/修改檔案清單
-**新增：**
-- `src/singer_agent/natural_motion.py` — 自然動作引擎
-- `src/singer_agent/lyrics_searcher.py` — 歌詞搜尋分析
-- `tests/singer_agent/test_natural_motion.py` — 自然動作測試
+### Sprint 2 ✅ MVP 完成 (124 tests + TS build)
+- DEV-2.1 ✅ ReconEngine + ATG Adapter（Playwright 偵察 + 技術指紋）
+- DEV-2.2 ✅ ScraperEngine + SpriteSplitter（Network 攔截 + Pillow 拆解）
+- DEV-2.3 ✅ ReverseEngine + WSAnalyzer + JSAnalyzer + PaytableParser（4 層逆向）
+- DEV-2.4 ✅ ReportBuilder（Jinja2 Markdown 報告 + JSON）
+- DEV-2.5 ✅ ConfigGenerator（GameModel → game-config.json）
+- DEV-2.6 ✅ PixiJS v8 遊戲引擎（TypeScript + Vite）
+  - CascadeGrid（BFS cluster 偵測 + 消除掉落）
+  - PaytableEngine（賠率計算 + Wild 替代）
+  - RNG（crypto.getRandomValues）
+  - HUD + SpinButton
+  - Vite build 成功 ✅，TypeScript 零錯誤 ✅
+- DEV-2.7 ✅ GameBuilder（模板複製 + config 注入 + npm build）
 
-**修改：**
-- `scripts/liveportrait_retarget.py` — 修復 bug + 批量模式
-- `src/singer_agent/liveportrait_adapter.py` — retarget_video()
-- `src/singer_agent/video_renderer.py` — V3.1 動態影片管線
-- `src/singer_agent/researcher.py` — lyrics_context 參數
-- `src/singer_agent/pipeline.py` — 歌詞搜尋步驟
-- `tests/singer_agent/test_pipeline.py` — 更新錯誤訊息斷言
-- `tests/singer_agent/test_video_renderer.py` — 更新 LP+MT 測試
+### 驗證結果
+- `python -m pytest tests/slot_cloner/` → **124 passed** ✅
+- `npx tsc --noEmit` → **零錯誤** ✅
+- `npx vite build` → **built in 1.65s** ✅
+- CLI `--dry-run` → **5 Phase 全部跑通** ✅（ATG Adapter 自動識別）
 
-### V3.1 管線流程（新）
+### Sprint 3 進行中
+- DEV-3.1 ✅ Free Spin 系統（FreeSpinFeature.ts — scatter 偵測 + 觸發 + 重觸發 + 消耗）
+- DEV-3.2 ✅ Multiplier 系統（MultiplierFeature.ts — 收集 + 累加 + 有效乘數）
+- Game.ts 重構：GameState 狀態機 + 整合 FreeSpin + Multiplier
+- HUD.ts 擴充：showFreeSpin / hideFreeSpin
+- TypeScript 零錯誤 ✅，Python 124 tests ✅
+- DEV-3.3 動畫系統（待做）
+- DEV-3.4 音效系統（待做）
+- DEV-3.5 Report 強化（待做）
+- DEV-3.6 Audio 強化（待做）
+
+### 或者可選：先做 Pipeline 整合測試
+- 手動錄製 ATG fixture（WS 訊息 + Sprite Sheet）
+- 用真實 ATG URL 跑完整 Pipeline
+
+### CEO 確認的決策
+1. **範圍**：先做 Clone 工具，換皮留 Phase 2
+2. **遊戲類型**：先支援消除型 (Cascade)
+3. **RTP 模擬**：能做就做，不行就下一階段
+4. **對標遊戲**：ATG 戰神賽特 (Storm of Seth)
+
+### 關鍵文件
+- 規格書：`docs/features/slot-clone-pipeline/01_spec.md`
+- 架構：`docs/features/slot-clone-pipeline/02_architecture.md`
+- 開發計畫：`docs/features/slot-clone-pipeline/03_dev_plan.md`
+- PixiJS 引擎：`src/slot_cloner/builder/template/`
+
+### 模組架構
 ```
-MP3 → 歌詞搜尋 (Ollama) → 曲風/故事分析
-                              ↓
-                    SongResearcher（含歌詞 context）
-                              ↓
-                    ComfyUI 背景生成（更精準的提示詞）
-                              ↓
-角色圖 → NaturalMotionEngine（眨眼/頭部/眉毛/眼球序列）
-                              ↓
-         LivePortrait 批量 retarget → 動態影片 (10fps)
-                              ↓ VRAM Gate
-         MuseTalk（以動態影片為輸入 → 嘴唇同步）
-                              ↓
-                    最終 MV 影片
+src/slot_cloner/
+├── models/     (18 Pydantic 模型, frozen=True)
+├── pipeline/   (Orchestrator + Context, 5 Phase 狀態機)
+├── plugins/    (BaseAdapter + Registry + ATG + Generic)
+├── recon/      (ReconEngine — Playwright 偵察)
+├── scraper/    (ScraperEngine + SpriteSplitter)
+├── reverse/    (ReverseEngine + WS/JS/Paytable 分析)
+├── report/     (ReportBuilder + Jinja2 模板)
+├── builder/    (GameBuilder + ConfigGenerator + PixiJS 模板)
+├── storage/    (StorageManager)
+├── config/     (Settings + YAML)
+├── progress/   (ProgressReporter)
+└── cli.py      (Click CLI)
 ```
 
-### ⏳ 待 CEO 測試確認
-- Telegram Bot 測試 V3.1（動態影片效果）
-- 驗證歌詞分析是否產出更好的背景
-- Git commit + push
+---
 
-## 之前完成的 V3.0
-- Commit `0a3a650` — 62/62 tests, 9 項安全修復
-- ⚠️ 尚未 push（等 CEO 確認後推送）
+## 🛑 暫停中：Singer Agent 技術碰壁
+- V3.2 2D 後處理天花板，探勘報告已完成
+- 待 CEO 決定：MultiTalk / EchoMimicV3 / LatentSync
+
+## Git 狀態
+- slot_cloner 全部新檔案尚未 commit
+- V3.2 修復尚未 commit
+- V3.0 `0a3a650` 尚未 push
 
 ## 硬體
 - GFX 5070 12GB VRAM / 64GB RAM
 
 ## ⚡ 最近壓縮事件
-- [2026-03-11 06:55:55] Context 被自動壓縮，以上內容是壓縮前的狀態
+- [2026-03-12 16:38:57] Context 被自動壓縮，以上內容是壓縮前的狀態
 - **請重新讀取此檔案確認進度**
