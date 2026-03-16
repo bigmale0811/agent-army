@@ -1,0 +1,23 @@
+# AgentForge 全域設定
+# 文件：agentforge.yaml
+
+# 預設 LLM 模型（格式：provider/model-name）
+default_model: openai/gpt-4o-mini
+
+# LLM Provider 設定
+providers:
+  openai:
+    api_key_env: OPENAI_API_KEY    # 從環境變數讀取 API key
+    base_url: https://api.openai.com/v1
+
+  ollama:
+    base_url: http://localhost:11434/v1
+    # Ollama 不需要 API key
+
+  gemini:
+    api_key_env: GOOGLE_API_KEY
+
+# 預算設定
+budget:
+  daily_limit_usd: 10.0           # 每日預算上限（USD）
+  warn_at_percent: 80.0           # 使用量達此百分比時警告

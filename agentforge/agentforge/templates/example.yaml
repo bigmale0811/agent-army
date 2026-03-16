@@ -1,0 +1,26 @@
+# 範例 Agent 定義
+# 這個 Agent 會列出當前目錄的檔案並用 LLM 分析
+
+name: file-analyzer
+description: "分析當前目錄的檔案結構並產出摘要報告"
+model: openai/gpt-4o-mini
+max_retries: 3
+
+steps:
+  - name: list_files
+    action: shell
+    command: "ls -la"
+
+  - name: analyze
+    action: llm
+    prompt: |
+      請分析以下目錄檔案列表，產出一份簡短的摘要報告，
+      包括：檔案總數、總大小、最大的 3 個檔案、建議清理的項目。
+
+      檔案列表：
+      {{ steps.list_files.output }}
+
+  - name: save_report
+    action: save
+    path: "file-analysis-report.md"
+    content: "{{ steps.analyze.output }}"

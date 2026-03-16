@@ -1,0 +1,32 @@
+# Code Reviewer Agent
+# 分析 git diff 並產出程式碼審查報告
+
+name: code-reviewer
+description: "自動化程式碼審查：git diff → LLM 分析 → 儲存報告"
+model: openai/gpt-4o-mini
+max_retries: 2
+
+steps:
+  - name: get_diff
+    action: shell
+    command: "git diff HEAD~1 HEAD --stat && echo '---' && git diff HEAD~1 HEAD"
+
+  - name: review
+    action: llm
+    prompt: |
+      你是一位資深工程師，請審查以下 git diff，提供：
+      1. 變更摘要（1-3 句）
+      2. 潛在問題或風險（條列式）
+      3. 改善建議（條列式）
+      4. 整體評分：LGTM / NEEDS_CHANGES / CRITICAL
+
+      Git Diff：
+      {{ steps.get_diff.output }}
+
+  - name: save_report
+    action: save
+    path: "code-review-report.md"
+    content: |
+      # Code Review Report
+
+      {{ steps.review.output }}
