@@ -9,7 +9,7 @@ max_retries: 3
 steps:
   - name: list_files
     action: shell
-    command: "ls -la"
+    command: "dir"
 
   - name: analyze
     action: llm

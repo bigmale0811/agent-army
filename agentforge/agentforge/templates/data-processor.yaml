@@ -9,7 +9,7 @@ max_retries: 2
 steps:
   - name: read_data
     action: shell
-    command: "cat data.csv || cat data.json || echo 'No data file found. Please create data.csv or data.json.'"
+    command: "type data.csv 2>nul || type data.json 2>nul || echo No data file found. Please create data.csv or data.json."
 
   - name: analyze
     action: llm
