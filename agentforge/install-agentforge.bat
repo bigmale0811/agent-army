@@ -224,7 +224,7 @@ echo   如果沒有，選 1（Gemini 免費）
 echo  ============================================
 echo.
 
-%PYTHON_CMD% -m agentforge setup
+%PYTHON_CMD% -m agentforge gui
 
 echo.
 echo  ============================================
