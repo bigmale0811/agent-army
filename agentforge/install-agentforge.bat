@@ -8,12 +8,12 @@ setlocal enabledelayedexpansion
 :: ============================================================
 
 echo.
-echo  ╔══════════════════════════════════════════╗
-echo  ║                                          ║
-echo  ║     AgentForge 一鍵安裝精靈              ║
-echo  ║     只要等它跑完就好，不用做任何事       ║
-echo  ║                                          ║
-echo  ╚══════════════════════════════════════════╝
+echo  ============================================
+echo.
+echo     AgentForge 一鍵安裝精靈
+echo     只要等它跑完就好，不用做任何事
+echo.
+echo  ============================================
 echo.
 
 :: ----------------------------------------------------------
@@ -45,7 +45,7 @@ echo.
 ::  第二步：自動下載並安裝 Python
 :: ----------------------------------------------------------
 echo  [2/4] 正在下載 Python 安裝檔，請稍等...
-echo        （檔案大約 25MB，視網路速度需要 1-3 分鐘）
+echo        (檔案大約 25MB，視網路速度需要 1-3 分鐘)
 echo.
 
 set PYTHON_URL=https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe
@@ -55,33 +55,31 @@ powershell -Command "& { [Net.ServicePointManager]::SecurityProtocol = [Net.Secu
 
 if not exist "%PYTHON_INSTALLER%" (
     echo.
-    echo  ╔══════════════════════════════════════════╗
-    echo  ║  下載失敗！請檢查網路連線後再試一次。    ║
-    echo  ║                                          ║
-    echo  ║  或者手動安裝 Python：                    ║
-    echo  ║  1. 打開 https://www.python.org           ║
-    echo  ║  2. 點 Downloads 下載                     ║
-    echo  ║  3. 安裝時記得勾選 Add to PATH            ║
-    echo  ║  4. 裝完後再雙擊這個檔案                  ║
-    echo  ╚══════════════════════════════════════════╝
+    echo  !! 下載失敗！請檢查網路連線後再試一次。
+    echo.
+    echo  或者手動安裝 Python：
+    echo  1. 打開 https://www.python.org
+    echo  2. 點 Downloads 下載
+    echo  3. 安裝時記得勾選 Add to PATH
+    echo  4. 裝完後再雙擊這個檔案
     echo.
     pause
     exit /b 1
 )
 
 echo        下載完成！正在安裝 Python...
-echo        （會出現安裝視窗，等它跑完就好）
+echo        (會出現安裝視窗，等它跑完就好)
 echo.
 
 :: /passive = 顯示進度條但不需要點按鈕
-:: PrependPath=1 = 自動加入 PATH（關鍵！）
+:: PrependPath=1 = 自動加入 PATH
 :: Include_pip=1 = 包含 pip
 "%PYTHON_INSTALLER%" /passive PrependPath=1 Include_pip=1 Include_test=0
 
 if %errorlevel% neq 0 (
     echo.
     echo        安裝失敗。可能需要系統管理員權限。
-    echo        請對這個檔案按右鍵 → 以系統管理員身分執行
+    echo        請對這個檔案按右鍵 --^> 以系統管理員身分執行
     echo.
     pause
     exit /b 1
@@ -107,20 +105,26 @@ if %errorlevel% neq 0 (
 )
 
 :: ----------------------------------------------------------
-::  第三步：安裝 AgentForge
+::  第三步：安裝 AgentForge（從 GitHub 安裝，不是 PyPI）
 :: ----------------------------------------------------------
 :install_agentforge
 echo  [3/4] 正在安裝 AgentForge...
-echo        （大約需要 1-2 分鐘）
+echo        (大約需要 1-2 分鐘)
 echo.
 
+:: 先移除 PyPI 上的同名假套件（如果有的話）
+python -m pip uninstall agentforge -y >nul 2>&1
 python -m pip install --upgrade pip >nul 2>&1
-python -m pip install agentforge 2>&1
+
+:: 從 GitHub 安裝我們真正的 AgentForge
+python -m pip install "agentforge @ https://github.com/bigmale0811/agent-army/archive/refs/heads/master.zip#subdirectory=agentforge" 2>&1
 
 if %errorlevel% neq 0 (
     echo.
-    echo        安裝 AgentForge 失敗，嘗試備用方式...
-    pip install agentforge 2>&1
+    echo  !! 安裝失敗，請確認網路連線正常後再試一次。
+    echo.
+    pause
+    exit /b 1
 )
 
 echo.
@@ -131,11 +135,23 @@ goto :run_setup
 
 :install_agentforge_py
 echo  [3/4] 正在安裝 AgentForge...
-echo        （大約需要 1-2 分鐘）
+echo        (大約需要 1-2 分鐘)
 echo.
 
+:: 先移除 PyPI 上的同名假套件（如果有的話）
+py -m pip uninstall agentforge -y >nul 2>&1
 py -m pip install --upgrade pip >nul 2>&1
-py -m pip install agentforge 2>&1
+
+:: 從 GitHub 安裝我們真正的 AgentForge
+py -m pip install "agentforge @ https://github.com/bigmale0811/agent-army/archive/refs/heads/master.zip#subdirectory=agentforge" 2>&1
+
+if %errorlevel% neq 0 (
+    echo.
+    echo  !! 安裝失敗，請確認網路連線正常後再試一次。
+    echo.
+    pause
+    exit /b 1
+)
 
 echo.
 echo        AgentForge 安裝完成！
@@ -147,10 +163,10 @@ echo.
 :run_setup
 echo  [4/4] 啟動安裝精靈...
 echo.
-echo  ════════════════════════════════════════════
+echo  ============================================
 echo   接下來精靈會用中文問你幾個問題，
 echo   照著回答就好！
-echo  ════════════════════════════════════════════
+echo  ============================================
 echo.
 
 :: 建立工作目錄在桌面
@@ -167,17 +183,17 @@ agentforge init . >nul 2>&1
 agentforge setup
 
 echo.
-echo  ╔══════════════════════════════════════════╗
-echo  ║                                          ║
-echo  ║            安裝全部完成！                 ║
-echo  ║                                          ║
-echo  ║   你的 AgentForge 已經裝好在桌面的       ║
-echo  ║   「my-agentforge」資料夾裡               ║
-echo  ║                                          ║
-echo  ║   想試跑 AI，在這個視窗輸入：             ║
-echo  ║   agentforge run example                  ║
-echo  ║                                          ║
-echo  ╚══════════════════════════════════════════╝
+echo  ============================================
+echo.
+echo     安裝全部完成！
+echo.
+echo     你的 AgentForge 已經裝好在桌面的
+echo     「my-agentforge」資料夾裡
+echo.
+echo     想試跑 AI，在這個視窗輸入：
+echo     agentforge run example
+echo.
+echo  ============================================
 echo.
 
 cmd /k
