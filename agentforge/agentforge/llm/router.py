@@ -11,6 +11,7 @@ import os
 from dataclasses import dataclass
 
 from agentforge.llm.providers.base import BaseProvider
+from agentforge.llm.providers.claude_code import ClaudeCodeProvider
 from agentforge.llm.providers.gemini import GeminiProvider
 from agentforge.llm.providers.openai_compat import OpenAICompatProvider
 from agentforge.schema import GlobalConfig, validate_model_string
@@ -45,6 +46,7 @@ class LLMRouter:
     - ollama：本地 Ollama 服務（http://localhost:11434/v1）
     - openai：OpenAI API
     - gemini：Google Gemini API
+    - claude-code：Claude Code CLI（訂閱制）
 
     Provider 實例採延遲建立並快取，避免重複初始化。
     """
@@ -185,8 +187,12 @@ class LLMRouter:
                 model=model_name,
             )
 
+        elif provider_name == "claude-code":
+            # Claude Code CLI 訂閱制，不需要 API key
+            return ClaudeCodeProvider(model=model_name)
+
         else:
             raise ValueError(
                 f"未知的 LLM Provider：'{provider_name}'。"
-                f"支援的 Provider：ollama、openai、gemini。"
+                f"支援的 Provider：ollama、openai、gemini、claude-code。"
             )

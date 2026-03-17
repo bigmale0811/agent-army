@@ -6,9 +6,11 @@
 - LLMResponse: 統一回應格式
 - OpenAICompatProvider: OpenAI 相容 Provider（含 Ollama）
 - GeminiProvider: Google Gemini Provider
+- ClaudeCodeProvider: Claude Code CLI Provider（訂閱制）
 """
 
 from agentforge.llm.providers.base import BaseProvider, LLMResponse
+from agentforge.llm.providers.claude_code import ClaudeCodeProvider
 from agentforge.llm.providers.gemini import GeminiProvider
 from agentforge.llm.providers.openai_compat import OpenAICompatProvider
 
@@ -17,4 +19,5 @@ __all__ = [
     "LLMResponse",
     "OpenAICompatProvider",
     "GeminiProvider",
+    "ClaudeCodeProvider",
 ]

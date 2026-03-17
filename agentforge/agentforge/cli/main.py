@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """AgentForge CLI 入口 — Click 框架主群組。
 
-註冊所有子指令：init, list, run, status。
+註冊所有子指令：init, list, run, status, telegram。
 """
 
 import click
@@ -10,7 +10,9 @@ from agentforge import __version__
 from agentforge.cli.init_cmd import init_command
 from agentforge.cli.list_cmd import list_command
 from agentforge.cli.run_cmd import run_command
+from agentforge.cli.setup_cmd import setup_command
 from agentforge.cli.status_cmd import status_command
+from agentforge.cli.telegram_cmd import telegram_command
 
 
 @click.group()
@@ -26,4 +28,6 @@ def cli() -> None:
 cli.add_command(init_command)
 cli.add_command(list_command)
 cli.add_command(run_command)
+cli.add_command(setup_command)
 cli.add_command(status_command)
+cli.add_command(telegram_command)

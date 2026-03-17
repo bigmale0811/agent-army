@@ -1,10 +1,10 @@
 # 🧠 Active Context
-更新：2026-03-17 — AgentForge MVP Stage 3&4 開發完成 🎉
+更新：2026-03-17 — Easy Onboarding 開發完成，429 tests passed 🎉
 
 <!-- PRIORITY:P0 -->
 ## 🔴 P0 — 關鍵狀態（永久）
-- **FSM 狀態**：🔵 Stage 3&4 開發完成 → 待進入 Stage 5 審查
-- **AgentForge MVP**：需求 ✅ → 架構 ✅ → 計畫 ✅ → **開發完成** ✅ (287 tests, 90% cov)
+- **FSM 狀態**：🟣 Stage 5 審查中 — Easy Onboarding 開發完成，等待最終審查
+- **Easy Onboarding**：需求 ✅ → 架構 ✅ → 計畫 ✅ → 開發 ✅ → 測試 ✅（429 passed）
 - **CEO 溝通規則**：不要一步一問，自主安排派工單推進到完成
 - **硬體限制**：GFX 5070 12GB VRAM / 64GB RAM
 <!-- /PRIORITY:P0 -->
@@ -12,22 +12,30 @@
 <!-- PRIORITY:P1 -->
 ## 🟡 P1 — 活躍記憶
 
-### AgentForge MVP 開發成果
-- **Week 1** ✅：專案骨架 + CLI (Click) + YAML Schema (Pydantic v2)
-- **Week 2** ✅：Step 框架 (Shell/LLM/Save) + TemplateEngine + LLM Router + Pipeline Engine
-- **Week 3** ✅：FailureHandler 三級修復 + TaskTracker SQLite + 整合到 Engine
-- **Week 4** ✅：BudgetTracker + status 命令 + Provider 整合測試
-- **Week 5** ✅：E2E 測試 + README + 模板 Agent + 打包 (.whl 建構成功)
-- **最終狀態**：287 tests pass, 90.19% coverage, `agentforge --version` = 0.1.0
+### Easy Onboarding 成果（本次新增）
+- **429 tests, 0 failures**（從 287 增加 142 個新測試）
+- **4 大功能完成**：
+  1. F1 白話文安裝說明 `agentforge/docs/EASY_INSTALL.md`
+  2. F2 安裝精靈 `agentforge setup --dry-run --auto`
+  3. F3 Claude Code CLI Provider `claude-code/sonnet`
+  4. F4 Telegram Bot `agentforge telegram`
+- **新增模組**：setup/ (4 files), telegram/ (5 files), claude_code.py
+- **CLI 已整合**：setup + telegram 指令已註冊
 
-### 檔案位置
-- 程式碼：`agentforge/agentforge/` (6 層架構)
-- 測試：`agentforge/tests/` (cli/core/llm/steps/utils/e2e)
-- Wheel：`agentforge/dist/agentforge-0.1.0-py3-none-any.whl`
-- 規格文件：`docs/features/agentforge-mvp/` (01-03)
+### AgentForge MVP v0.1.0 成果
+- **6 層架構**：CLI / Schema / Core / LLM / Steps / Utils
+- **75 個檔案**，11,421 行新增程式碼
+- **Git Commit**：`6aa0194` on master
+
+### 關鍵檔案
+- 程式碼：`agentforge/agentforge/`
+- 測試：`agentforge/tests/`
+- 白話文說明：`agentforge/docs/EASY_INSTALL.md`
+- 使用手冊：`agentforge/docs/USER_MANUAL.md`
+- Easy Onboarding 規格：`docs/features/easy-onboarding/01_spec.md`
 
 ### ⏭️ 下一步
-1. **FSM Stage 5**：code-review + python-review + security-review
-2. **FSM Stage 6**：遞迴驗證 → 通過後 git commit + 文件更新
-3. 考慮是否需要 Telegram 傳送最終報告給 CEO
+1. Stage 5 審查 → Stage 6 驗證 → git commit
+2. 發布到 PyPI
+3. 讓 HR / 會計同事實際測試安裝精靈
 <!-- /PRIORITY:P1 -->

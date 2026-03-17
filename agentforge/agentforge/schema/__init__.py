@@ -10,7 +10,7 @@
 """
 
 from agentforge.schema.agent_def import AgentDef, StepDef
-from agentforge.schema.config import BudgetConfig, GlobalConfig, LLMProviderConfig
+from agentforge.schema.config import BudgetConfig, GlobalConfig, LLMProviderConfig, TelegramConfig
 from agentforge.schema.validator import (
     AgentForgeValidationError,
     load_agent_def,
@@ -24,6 +24,7 @@ __all__ = [
     "GlobalConfig",
     "LLMProviderConfig",
     "BudgetConfig",
+    "TelegramConfig",
     "AgentForgeValidationError",
     "load_agent_def",
     "load_global_config",

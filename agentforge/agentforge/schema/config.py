@@ -4,6 +4,7 @@
 此模組定義了 AgentForge 平台的全域設定結構，包括：
 - LLMProviderConfig：LLM Provider 連線設定
 - BudgetConfig：預算控管設定
+- TelegramConfig：Telegram Bot 設定（可選）
 - GlobalConfig：頂層全域設定（彙整所有子設定）
 
 所有模型皆為 frozen（不可變）。
@@ -42,6 +43,20 @@ class BudgetConfig(BaseModel):
     warn_at_percent: float = 80.0  # 警告閾值百分比
 
 
+class TelegramConfig(BaseModel):
+    """Telegram Bot 設定。
+
+    Attributes:
+        bot_token: Telegram Bot API Token（由 @BotFather 取得）。
+        allowed_users: 允許使用 Bot 的 Telegram User ID 白名單，空串列表示不限制。
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    bot_token: str = ""  # Telegram Bot API Token
+    allowed_users: list[int] = []  # User ID 白名單（空串列 = 不限制）
+
+
 class GlobalConfig(BaseModel):
     """AgentForge 全域設定。
 
@@ -51,6 +66,7 @@ class GlobalConfig(BaseModel):
         default_model: 預設 LLM 模型（格式：provider/model-name）。
         providers: 各 LLM Provider 的連線設定。
         budget: 預算控管設定。
+        telegram: Telegram Bot 設定（可選，不設定則不啟用 Telegram）。
     """
 
     model_config = ConfigDict(frozen=True)
@@ -58,3 +74,4 @@ class GlobalConfig(BaseModel):
     default_model: str = "openai/gpt-4o-mini"  # 預設模型
     providers: dict[str, LLMProviderConfig] = {}  # Provider 設定
     budget: BudgetConfig = BudgetConfig()  # 預算設定
+    telegram: TelegramConfig | None = None  # Telegram Bot 設定（可選）

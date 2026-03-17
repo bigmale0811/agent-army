@@ -83,6 +83,7 @@ class BudgetTracker:
         """根據定價表計算本次呼叫成本。
 
         Ollama/本地模型（以 "ollama/" 開頭）回傳 0.0。
+        Claude Code CLI（以 "claude-code/" 開頭）回傳 0.0（訂閱制免費）。
         未知模型也回傳 0.0，不阻擋執行流程。
 
         Args:
@@ -95,6 +96,10 @@ class BudgetTracker:
         """
         # Ollama 本地模型免費
         if model.startswith("ollama/"):
+            return 0.0
+
+        # Claude Code CLI 訂閱制免費
+        if model.startswith("claude-code/"):
             return 0.0
 
         pricing = PRICING.get(model)
