@@ -108,6 +108,74 @@ class EnvironmentDetector:
         except Exception as e:  # noqa: BLE001
             return False, f"Ollama 偵測失敗：{e}"
 
+    def check_node_npm(self) -> tuple[bool, str]:
+        """偵測 Node.js 及 npm 是否已安裝。
+
+        Returns:
+            (是否可用, 版本字串或錯誤訊息)
+            例：(True, "npm 10.2.0") 或 (False, "找不到 npm")
+        """
+        # 先確認 npm 指令是否存在於 PATH
+        if shutil.which("npm") is None:
+            return False, "找不到 npm（請先安裝 Node.js：https://nodejs.org）"
+
+        try:
+            result = subprocess.run(
+                ["npm", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                version = result.stdout.strip()
+                return True, f"npm {version}"
+            else:
+                return False, "npm 執行失敗"
+        except FileNotFoundError:
+            return False, "找不到 npm（請先安裝 Node.js：https://nodejs.org）"
+        except subprocess.TimeoutExpired:
+            return False, "npm 執行超時"
+        except Exception as e:  # noqa: BLE001
+            return False, f"npm 偵測失敗：{e}"
+
+    def install_claude_cli(self) -> tuple[bool, str]:
+        """透過 npm 全域安裝 Claude Code CLI。
+
+        會先偵測 npm 是否可用，若不可用則回傳失敗。
+        安裝指令：npm install -g @anthropic-ai/claude-code
+
+        Returns:
+            (是否安裝成功, 結果訊息)
+        """
+        # 先確認 npm 可用
+        npm_ok, npm_msg = self.check_node_npm()
+        if not npm_ok:
+            return False, f"無法安裝 Claude CLI：{npm_msg}"
+
+        try:
+            result = subprocess.run(
+                ["npm", "install", "-g", "@anthropic-ai/claude-code"],
+                capture_output=True,
+                text=True,
+                timeout=300,  # npm 安裝可能較慢，給 5 分鐘
+            )
+            if result.returncode == 0:
+                # 安裝成功，再驗證一次
+                cli_ok, cli_msg = self.check_claude_cli()
+                if cli_ok:
+                    return True, f"Claude CLI 安裝成功：{cli_msg}"
+                else:
+                    return True, "npm 安裝完成，但 claude 指令尚未生效（可能需要重啟終端機）"
+            else:
+                stderr = result.stderr.strip()
+                return False, f"npm 安裝失敗：{stderr[:200]}"
+        except FileNotFoundError:
+            return False, "找不到 npm，無法安裝 Claude CLI"
+        except subprocess.TimeoutExpired:
+            return False, "安裝超時（超過 5 分鐘），請手動執行：npm install -g @anthropic-ai/claude-code"
+        except Exception as e:  # noqa: BLE001
+            return False, f"安裝過程發生錯誤：{e}"
+
     def check_existing_config(self, path: Path) -> bool:
         """偵測指定目錄是否已有 agentforge.yaml 設定檔。
 

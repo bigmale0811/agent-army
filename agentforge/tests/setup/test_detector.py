@@ -113,6 +113,88 @@ class TestCheckExistingConfig:
         assert self.detector.check_existing_config(tmp_path) is False
 
 
+class TestCheckNodeNpm:
+    """check_node_npm 測試群組。"""
+
+    def setup_method(self) -> None:
+        self.detector = EnvironmentDetector()
+
+    def test_check_node_npm_found(self) -> None:
+        """偵測到 npm — 回傳 (True, version_string)。"""
+        mock_result = MagicMock()
+        mock_result.stdout = "10.2.0\n"
+        mock_result.returncode = 0
+
+        with patch("shutil.which", return_value="/usr/local/bin/npm"), \
+             patch("subprocess.run", return_value=mock_result):
+            found, version = self.detector.check_node_npm()
+
+        assert found is True
+        assert "10.2.0" in version
+
+    def test_check_node_npm_not_found(self) -> None:
+        """未偵測到 npm — 回傳 (False, msg)。"""
+        with patch("shutil.which", return_value=None):
+            found, msg = self.detector.check_node_npm()
+
+        assert found is False
+        assert "npm" in msg.lower() or "node" in msg.lower()
+
+    def test_check_node_npm_timeout(self) -> None:
+        """npm 執行超時 — 回傳 (False, msg)。"""
+        import subprocess as sp
+
+        with patch("shutil.which", return_value="/usr/local/bin/npm"), \
+             patch("subprocess.run", side_effect=sp.TimeoutExpired(cmd="npm", timeout=10)):
+            found, msg = self.detector.check_node_npm()
+
+        assert found is False
+        assert "超時" in msg
+
+
+class TestInstallClaudeCli:
+    """install_claude_cli 測試群組。"""
+
+    def setup_method(self) -> None:
+        self.detector = EnvironmentDetector()
+
+    def test_install_claude_cli_no_npm(self) -> None:
+        """npm 不可用時 — 安裝應失敗。"""
+        with patch.object(self.detector, "check_node_npm", return_value=(False, "找不到 npm")):
+            ok, msg = self.detector.install_claude_cli()
+
+        assert ok is False
+        assert "npm" in msg.lower() or "無法安裝" in msg
+
+    def test_install_claude_cli_success(self) -> None:
+        """npm 可用且安裝成功 — 回傳 (True, msg)。"""
+        mock_install = MagicMock()
+        mock_install.returncode = 0
+        mock_install.stdout = ""
+
+        with patch.object(self.detector, "check_node_npm", return_value=(True, "npm 10.2.0")), \
+             patch("subprocess.run", return_value=mock_install), \
+             patch.object(self.detector, "check_claude_cli", return_value=(True, "claude 1.0.0")):
+            ok, msg = self.detector.install_claude_cli()
+
+        assert ok is True
+        assert "成功" in msg
+
+    def test_install_claude_cli_npm_fails(self) -> None:
+        """npm install 失敗 — 回傳 (False, msg)。"""
+        mock_install = MagicMock()
+        mock_install.returncode = 1
+        mock_install.stderr = "ERR! permission denied"
+        mock_install.stdout = ""
+
+        with patch.object(self.detector, "check_node_npm", return_value=(True, "npm 10.2.0")), \
+             patch("subprocess.run", return_value=mock_install):
+            ok, msg = self.detector.install_claude_cli()
+
+        assert ok is False
+        assert "失敗" in msg
+
+
 class TestCheckPythonVersion:
     """check_python_version 測試群組。"""
 

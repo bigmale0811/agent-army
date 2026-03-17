@@ -126,3 +126,54 @@ class TestWizardConfigureCredential:
             result = wizard._step_configure_credential()
 
         assert result is True
+
+    def test_wizard_claude_code_cli_already_installed(self) -> None:
+        """claude-code provider — CLI 已安裝時直接成功。"""
+        wizard = SetupWizard(dry_run=True, auto=False)
+        wizard._state.provider = "claude-code"
+
+        with patch.object(wizard._detector, "check_claude_cli", return_value=(True, "claude 1.0.0")):
+            result = wizard._step_configure_credential()
+
+        assert result is True
+
+    def test_wizard_claude_code_auto_install_with_npm(self) -> None:
+        """claude-code provider — CLI 未安裝但 npm 可用，自動安裝成功。"""
+        wizard = SetupWizard(dry_run=True, auto=False)
+        wizard._state.provider = "claude-code"
+
+        with patch.object(wizard._detector, "check_claude_cli", return_value=(False, "找不到")), \
+             patch.object(wizard._detector, "check_node_npm", return_value=(True, "npm 10.2.0")), \
+             patch("click.confirm", return_value=True), \
+             patch.object(wizard._detector, "install_claude_cli", return_value=(True, "安裝成功")):
+            result = wizard._step_configure_credential()
+
+        assert result is True
+
+    def test_wizard_claude_code_no_npm_continue(self) -> None:
+        """claude-code provider — 無 npm，使用者選擇繼續設定。"""
+        wizard = SetupWizard(dry_run=True, auto=False)
+        wizard._state.provider = "claude-code"
+
+        with patch.object(wizard._detector, "check_claude_cli", return_value=(False, "找不到")), \
+             patch.object(wizard._detector, "check_node_npm", return_value=(False, "找不到 npm")), \
+             patch("click.confirm", return_value=True):
+            result = wizard._step_configure_credential()
+
+        assert result is True
+
+    def test_wizard_claude_code_auto_mode_with_npm(self) -> None:
+        """claude-code provider — auto 模式下 npm 可用時自動安裝。"""
+        wizard = SetupWizard(dry_run=True, auto=True)
+        wizard._state.provider = "claude-code"
+
+        # auto 模式跳過驗證，但 _configure_claude_code 仍會被呼叫
+        # 因為 auto 模式在 _step_configure_credential 中先過濾了 gemini/openai
+        # 對 claude-code 會直接呼叫 _configure_claude_code
+        # 但目前 auto 模式預設 provider 是 gemini，所以手動設定
+        with patch.object(wizard._detector, "check_claude_cli", return_value=(False, "找不到")), \
+             patch.object(wizard._detector, "check_node_npm", return_value=(True, "npm 10.2.0")), \
+             patch.object(wizard._detector, "install_claude_cli", return_value=(True, "安裝成功")):
+            result = wizard._configure_claude_code()
+
+        assert result is True

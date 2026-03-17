@@ -312,23 +312,83 @@ class SetupWizard:
         return True
 
     def _configure_claude_code(self) -> bool:
-        """確認 Claude CLI 已安裝。
+        """確認 Claude CLI 已安裝，若未安裝則嘗試自動安裝。
+
+        流程：
+        1. 偵測 claude CLI → 已安裝就完成
+        2. 未安裝 → 偵測 npm → 有 npm 就自動安裝
+        3. 無 npm → 偵測 Node.js → 引導使用者手動安裝
+        4. 無 Node.js → 顯示完整安裝指引
 
         Returns:
-            True（即使 CLI 未安裝也繼續，只顯示警告）。
+            True 表示設定完成（不論 CLI 是否安裝成功，都可繼續設定）。
         """
         click.echo("Claude Code 使用訂閱制，不需要 API Key。")
-        click.echo("請確認已安裝 Claude CLI：npm install -g @anthropic-ai/claude-code")
         click.echo("正在偵測 Claude CLI...")
 
+        # 步驟 1：先偵測 claude CLI 是否已安裝
         ok, msg = self._detector.check_claude_cli()
         if ok:
             click.echo(f"✅ 找到 Claude CLI：{msg}")
-        else:
-            click.echo(f"⚠️  未找到 Claude CLI：{msg}")
-            click.echo("（可繼續設定，之後再安裝）")
+            return True
 
-        return True
+        # 步驟 2：未安裝，嘗試自動安裝
+        click.echo(f"⚠️  未找到 Claude CLI：{msg}")
+        click.echo("")
+
+        # 先檢查 npm 是否可用
+        npm_ok, npm_msg = self._detector.check_node_npm()
+
+        if npm_ok:
+            # npm 可用，詢問是否自動安裝
+            click.echo(f"偵測到 {npm_msg}，可以自動安裝 Claude CLI。")
+
+            if self._state.auto:
+                do_install = True
+            else:
+                do_install = click.confirm(
+                    "是否自動安裝 Claude CLI？（大約 1-2 分鐘）",
+                    default=True,
+                )
+
+            if do_install:
+                click.echo("正在安裝 Claude CLI，請稍候...")
+                click.echo("（執行 npm install -g @anthropic-ai/claude-code）")
+                install_ok, install_msg = self._detector.install_claude_cli()
+
+                if install_ok:
+                    click.echo(f"✅ {install_msg}")
+                    return True
+                else:
+                    click.echo(f"❌ {install_msg}")
+                    click.echo("（設定將繼續，之後可手動安裝）")
+                    return True
+            else:
+                click.echo("已跳過自動安裝。")
+                click.echo("之後可手動執行：npm install -g @anthropic-ai/claude-code")
+                return True
+        else:
+            # npm 也找不到，顯示完整安裝指引
+            click.echo("你的電腦目前沒有安裝 Node.js / npm。")
+            click.echo("Claude CLI 需要 Node.js 才能安裝。")
+            click.echo("")
+            click.echo("安裝步驟：")
+            click.echo("  1. 前往 https://nodejs.org 下載並安裝 Node.js")
+            click.echo("  2. 安裝完成後，開新的終端機視窗")
+            click.echo("  3. 執行：npm install -g @anthropic-ai/claude-code")
+            click.echo("")
+
+            if not self._state.auto:
+                proceed = click.confirm(
+                    "是否先繼續設定？（之後再安裝 Claude CLI）",
+                    default=True,
+                )
+                if not proceed:
+                    click.echo("請先安裝 Node.js 後再執行 agentforge setup。")
+                    raise SystemExit(0)
+
+            click.echo("（設定將繼續，之後再安裝 Claude CLI）")
+            return True
 
     def _configure_ollama(self) -> bool:
         """確認 Ollama 已安裝並執行。

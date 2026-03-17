@@ -135,9 +135,78 @@ echo        AgentForge 安裝成功!
 echo.
 
 :: ----------------------------------------------------------
-::  第四步：建立專案並啟動安裝精靈
+::  第四步：檢查 Node.js（Claude Code CLI 需要）
 :: ----------------------------------------------------------
-echo  [4/4] 建立專案並啟動安裝精靈...
+echo  [4/5] 檢查 Node.js（部分 AI 服務需要）...
+echo.
+
+where node >nul 2>&1
+if %errorlevel% equ 0 (
+    for /f "tokens=*" %%v in ('node --version 2^>^&1') do set NODEVER=%%v
+    echo        已找到 Node.js !NODEVER!
+    echo.
+    goto :step5
+)
+
+echo        沒有找到 Node.js。
+echo        如果你想用 Claude Code（選項 2），需要 Node.js。
+echo        如果你選 Gemini（選項 1），可以跳過。
+echo.
+echo        要自動安裝 Node.js 嗎？
+echo        1. 是，幫我安裝（建議）
+echo        2. 不用，我用 Gemini 就好
+echo.
+
+set NODE_CHOICE=1
+set /p NODE_CHOICE="你的選擇（預設 1）: "
+
+if "!NODE_CHOICE!"=="2" (
+    echo        已跳過 Node.js 安裝。
+    echo.
+    goto :step5
+)
+
+echo        正在下載 Node.js 安裝檔...
+echo        (大約 30MB，需要 1-3 分鐘)
+echo.
+
+set NODE_URL=https://nodejs.org/dist/v22.14.0/node-v22.14.0-x64.msi
+set NODE_INSTALLER=%TEMP%\node-installer.msi
+
+powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%NODE_URL%' -OutFile '%NODE_INSTALLER%' -UseBasicParsing" 2>nul
+
+if not exist "%NODE_INSTALLER%" (
+    echo.
+    echo  !! Node.js 下載失敗，但不影響安裝。
+    echo     如果之後要用 Claude，可以手動安裝：https://nodejs.org
+    echo.
+    goto :step5
+)
+
+echo        下載完成！正在安裝 Node.js...
+echo        (會出現安裝視窗，等它跑完就好)
+echo.
+
+msiexec /i "%NODE_INSTALLER%" /passive /norestart
+
+del "%NODE_INSTALLER%" >nul 2>&1
+
+:: 重新載入 PATH（Node.js 預設安裝路徑）
+set "PATH=%ProgramFiles%\nodejs;%PATH%"
+
+where node >nul 2>&1
+if %errorlevel% equ 0 (
+    echo        Node.js 安裝成功！
+) else (
+    echo        Node.js 安裝完成，可能需要重啟終端機才能生效。
+)
+echo.
+
+:: ----------------------------------------------------------
+::  第五步：建立專案並啟動安裝精靈
+:: ----------------------------------------------------------
+:step5
+echo  [5/5] 建立專案並啟動安裝精靈...
 echo.
 
 if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
@@ -149,6 +218,9 @@ echo.
 echo  ============================================
 echo   接下來精靈會用中文問你幾個問題，
 echo   照著回答就好!
+echo.
+echo   如果你有 Claude Pro/Max 訂閱，選 2
+echo   如果沒有，選 1（Gemini 免費）
 echo  ============================================
 echo.
 
