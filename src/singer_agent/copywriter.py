@@ -89,12 +89,8 @@ class Copywriter:
             raise ValueError("Ollama 回傳空白回應，無法產出文案")
 
         # 清理 markdown 包裹
-        text = response.strip()
-        if text.startswith("```"):
-            lines = text.split("\n")
-            text = "\n".join(lines[1:])
-            if text.endswith("```"):
-                text = text[:-3]
+        from src.singer_agent.ollama_client import strip_markdown_fences
+        text = strip_markdown_fences(response)
 
         data = json.loads(text)
 

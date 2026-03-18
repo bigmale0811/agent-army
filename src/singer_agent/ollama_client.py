@@ -18,6 +18,17 @@ from src.singer_agent import config
 _logger = logging.getLogger(__name__)
 
 
+def strip_markdown_fences(text: str) -> str:
+    """移除 LLM 回應中的 markdown code fence（```json ... ```）。"""
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.split("\n")
+        text = "\n".join(lines[1:])
+        if text.endswith("```"):
+            text = text[:-3]
+    return text.strip()
+
+
 class OllamaUnavailableError(RuntimeError):
     """Ollama 服務無法連線時拋出的例外。繼承自 RuntimeError。"""
 

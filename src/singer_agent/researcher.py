@@ -120,13 +120,8 @@ class SongResearcher:
             raise ValueError("Ollama 回傳空白回應，無法解析歌曲研究")
 
         # 清理可能的 markdown 包裹（```json ... ```）
-        text = response.strip()
-        if text.startswith("```"):
-            # 移除第一行（```json）和最後的 ```
-            lines = text.split("\n")
-            text = "\n".join(lines[1:])
-            if text.endswith("```"):
-                text = text[:-3]
+        from src.singer_agent.ollama_client import strip_markdown_fences
+        text = strip_markdown_fences(response)
 
         data = json.loads(text)
 

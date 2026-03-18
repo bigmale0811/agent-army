@@ -27,6 +27,45 @@ from src.singer_agent import config
 
 _logger = logging.getLogger(__name__)
 
+# FaceLandmarker 模型路徑（mediapipe tasks API 需要）
+_FACE_LANDMARKER_MODEL = Path(__file__).resolve().parent.parent.parent / "data" / "models" / "face_landmarker.task"
+
+
+def _create_face_mesh(mp: Any) -> Any:
+    """建立 MediaPipe FaceMesh / FaceLandmarker（相容新舊 API）。"""
+    # 嘗試舊 API（mediapipe < 0.10.14）
+    if hasattr(mp, 'solutions') and hasattr(mp.solutions, 'face_mesh'):
+        return mp.solutions.face_mesh.FaceMesh(
+            static_image_mode=False,
+            max_num_faces=1,
+            refine_landmarks=True,
+            min_detection_confidence=0.5,
+        )
+
+    # 新 API（mediapipe >= 0.10.14）— 使用 FaceLandmarker
+    from mediapipe.tasks.python import vision, BaseOptions
+
+    if not _FACE_LANDMARKER_MODEL.exists():
+        _download_face_landmarker_model()
+
+    options = vision.FaceLandmarkerOptions(
+        base_options=BaseOptions(model_asset_path=str(_FACE_LANDMARKER_MODEL)),
+        running_mode=vision.RunningMode.IMAGE,
+        num_faces=1,
+        output_face_blendshapes=False,
+    )
+    return vision.FaceLandmarker.create_from_options(options)
+
+
+def _download_face_landmarker_model() -> None:
+    """下載 MediaPipe FaceLandmarker 模型檔。"""
+    import urllib.request
+    url = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
+    _FACE_LANDMARKER_MODEL.parent.mkdir(parents=True, exist_ok=True)
+    _logger.info("下載 FaceLandmarker 模型：%s", url)
+    urllib.request.urlretrieve(url, str(_FACE_LANDMARKER_MODEL))
+    _logger.info("模型下載完成：%s", _FACE_LANDMARKER_MODEL)
+
 # MediaPipe Face Mesh 嘴唇 landmark 索引
 # 外唇 + 內唇共 22 個特徵點，精準追蹤嘴型變化
 _LIP_INDICES = [
@@ -324,17 +363,15 @@ class QualityChecker:
         Returns:
             每取樣幀的嘴唇運動方差列表
         """
-        face_mesh = mp.solutions.face_mesh.FaceMesh(
-            static_image_mode=False,
-            max_num_faces=1,
-            refine_landmarks=True,
-            min_detection_confidence=0.5,
-        )
+        # MediaPipe 0.10.32+ 移除了 mp.solutions，改用 tasks API
+        face_mesh = _create_face_mesh(mp)
+        use_legacy = hasattr(mp, 'solutions') and hasattr(mp.solutions, 'face_mesh')
 
         cap = cv2.VideoCapture(str(video_path))
         if not cap.isOpened():
             _logger.error("無法開啟影片：%s", video_path)
-            face_mesh.close()
+            if hasattr(face_mesh, 'close'):
+                face_mesh.close()
             return []
 
         fps = cap.get(cv2.CAP_PROP_FPS) or 30
@@ -356,29 +393,41 @@ class QualityChecker:
                     continue
 
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                results = face_mesh.process(rgb)
+                landmarks = None
 
-                if results.multi_face_landmarks:
-                    lm = results.multi_face_landmarks[0]
-                    # 提取嘴唇 landmarks 的 (x, y) 座標
-                    lips = np.array([
-                        [lm.landmark[i].x, lm.landmark[i].y]
-                        for i in _LIP_INDICES
-                        if i < len(lm.landmark)
-                    ])
+                if use_legacy:
+                    results = face_mesh.process(rgb)
+                    if results.multi_face_landmarks:
+                        lm = results.multi_face_landmarks[0]
+                        landmarks = [
+                            (lm.landmark[i].x, lm.landmark[i].y)
+                            for i in _LIP_INDICES
+                            if i < len(lm.landmark)
+                        ]
+                else:
+                    # 新 tasks API（FaceLandmarker.detect）
+                    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+                    result = face_mesh.detect(mp_image)
+                    if result.face_landmarks:
+                        lm_list = result.face_landmarks[0]
+                        landmarks = [
+                            (lm_list[i].x, lm_list[i].y)
+                            for i in _LIP_INDICES
+                            if i < len(lm_list)
+                        ]
+
+                if landmarks:
+                    lips = np.array(landmarks)
 
                     if prev_lips is not None and len(lips) == len(prev_lips):
-                        # 均方位移（Mean Squared Displacement）
                         diff = lips - prev_lips
                         variance = float(np.mean(diff ** 2))
                         variances.append(variance)
                     else:
-                        # 第一幀或維度不一致
                         variances.append(0.0)
 
                     prev_lips = lips
                 else:
-                    # 未偵測到臉部
                     variances.append(0.0)
                     prev_lips = None
 
@@ -386,7 +435,8 @@ class QualityChecker:
 
         finally:
             cap.release()
-            face_mesh.close()
+            if hasattr(face_mesh, 'close'):
+                face_mesh.close()
 
         _logger.info(
             "嘴唇運動分析：%d 幀，高運動幀 %d（閾值 %.4f）",

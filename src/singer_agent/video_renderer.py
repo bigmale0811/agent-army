@@ -15,9 +15,14 @@ V3.0 變更：
 - VRAM 分時管控：兩模型不同時載入
 
 V3.1 變更：
-- LivePortrait 改為產出帶自然動態的 MP4 影片（眨眼、頭部擺動、眉毛）
-- MuseTalk 以動態影片為輸入（非靜態圖片），實現表情+嘴唇同步
+- LivePortrait 產出帶自然表情的 MP4 影片（眨眼、眉毛、微笑）
+- MuseTalk 以動態影片為輸入，實現表情+嘴唇同步
 - 新增 NaturalMotionEngine 生成逐幀表情參數序列
+
+V3.2 變更：
+- 頭部擺動改為 2D 後處理（LivePortrait + MuseTalk 無法保留頭部旋轉）
+- MuseTalk 產出後用 OpenCV 逐幀旋轉模擬頭部自然微動
+- Haar cascade 臉部偵測 + 橢圓漸層遮罩 → 只旋轉頭部，背景不動
 """
 import logging
 import shutil
@@ -128,6 +133,25 @@ class VideoRenderer:
             return output_path, "dry_run"
 
         # 根據渲染引擎分派
+        if self.renderer == "wan_s2v":
+            from src.singer_agent.wan_adapter import render_s2v
+            result_path, mode = render_s2v(
+                composite_image, audio_path, output_path,
+            )
+            if mode == "wan_s2v":
+                return result_path, mode
+            _logger.warning("Wan2.2-S2V 渲染失敗，降級到 FLOAT/EDTalk")
+
+        if self.renderer in ("float", "wan_s2v"):
+            from src.singer_agent.float_adapter import render_float
+            result_path, mode = render_float(
+                composite_image, audio_path, output_path,
+                exp_type=exp_type,
+            )
+            if mode == "float":
+                return result_path, mode
+            _logger.warning("FLOAT 渲染失敗，降級到 EDTalk")
+
         if self.renderer == "liveportrait_musetalk":
             return self._render_liveportrait_musetalk(
                 composite_image, audio_path, output_path,
@@ -445,6 +469,8 @@ class VideoRenderer:
         intermediate_source = composite_image
         lp_output_dir: Path | None = None
         use_motion_video = False
+        head_motion_params: list[tuple[float, float, float]] = []
+        motion_fps = 10
 
         try:
             self._pre_launch_cleanup()
@@ -462,7 +488,7 @@ class VideoRenderer:
             duration = get_audio_duration_seconds(str(audio_path))
             _logger.info("音訊時長：%.1f 秒", duration)
 
-            # 生成自然動作序列（10fps，後續由 MuseTalk 處理）
+            # 生成自然動作序列（10fps）
             motion_fps = 10
             engine = NaturalMotionEngine(seed=42)
             motion_frames = engine.generate_sequence(
@@ -476,13 +502,27 @@ class VideoRenderer:
                 len(motion_frames), motion_fps,
             )
 
+            # ★ LivePortrait 只處理表情（頭部歸零）
+            # 頭部旋轉由 MuseTalk 後的 2D 後處理完成
+            from dataclasses import replace as dc_replace
+            expression_only_frames = [
+                dc_replace(f, head_pitch=0.0, head_yaw=0.0, head_roll=0.0)
+                for f in motion_frames
+            ]
+
+            # 保存頭部動態參數供後處理用
+            head_motion_params = [
+                (f.head_pitch, f.head_yaw, f.head_roll)
+                for f in motion_frames
+            ]
+
             # 建立暫存目錄
             lp_output_dir = Path(tempfile.mkdtemp(prefix="liveportrait_"))
 
-            # 批量 retarget → 動態影片
+            # 批量 retarget → 表情動態影片（無頭部旋轉）
             motion_video = adapter.retarget_video(
                 source_image=composite_image,
-                frames=motion_frames,
+                frames=expression_only_frames,
                 output_dir=lp_output_dir,
                 fps=motion_fps,
             )
@@ -490,7 +530,7 @@ class VideoRenderer:
             intermediate_source = motion_video
             use_motion_video = True
             _logger.info(
-                "LivePortrait 動態影片完成：%s", motion_video,
+                "LivePortrait 表情影片完成：%s", motion_video,
             )
 
         except Exception as exc:
@@ -510,6 +550,23 @@ class VideoRenderer:
                 exp_type=exp_type,
             )
             render_mode = "liveportrait_musetalk" if use_motion_video else "musetalk"
+
+            # Phase C: 2D 頭部動態後處理
+            if use_motion_video and head_motion_params:
+                try:
+                    final_path = self._apply_head_motion_2d(
+                        video_path=Path(result[0]),
+                        head_params=head_motion_params,
+                        motion_fps=motion_fps,
+                    )
+                    _logger.info("2D 頭部動態後處理完成：%s", final_path)
+                    return str(final_path), render_mode
+                except Exception as exc:
+                    _logger.warning(
+                        "2D 頭部動態後處理失敗（%s），使用無頭動版本",
+                        exc,
+                    )
+
             return result[0], render_mode
         except Exception as exc:
             _logger.warning(
@@ -523,6 +580,190 @@ class VideoRenderer:
             # 清理 LivePortrait 暫存目錄（防止 tempfile leak）
             if lp_output_dir and lp_output_dir.exists():
                 shutil.rmtree(str(lp_output_dir), ignore_errors=True)
+
+    def _apply_head_motion_2d(
+        self,
+        video_path: Path,
+        head_params: list[tuple[float, float, float]],
+        motion_fps: int = 10,
+    ) -> Path:
+        """
+        2D 頭部動態後處理（僅旋轉頭部區域，背景不動）。
+
+        在 MuseTalk 產出的影片上，偵測臉部區域後建立橢圓漸層遮罩，
+        僅對頭部區域套用 2D 仿射旋轉，背景和身體保持靜止。
+
+        LivePortrait + MuseTalk 管線無法保留頭部旋轉
+        （MuseTalk face stabilization 會抹平），
+        因此頭部動態改由後處理階段完成。
+
+        Args:
+            video_path: MuseTalk 產出的影片路徑
+            head_params: 每幀 (pitch, yaw, roll) 列表（motion_fps 取樣）
+            motion_fps: head_params 的幀率
+
+        Returns:
+            後處理完成的影片路徑（原地覆寫）
+        """
+        import cv2
+        import numpy as np
+
+        cap = cv2.VideoCapture(str(video_path))
+        if not cap.isOpened():
+            raise RuntimeError(f"無法開啟影片：{video_path}")
+
+        video_fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+        _logger.info(
+            "2D 頭部動態：%d 幀 @ %.1ffps（%dx%d），"
+            "motion 參數 %d 幀 @ %dfps",
+            total_frames, video_fps, w, h,
+            len(head_params), motion_fps,
+        )
+
+        # ── Step 1: 在第一幀偵測臉部區域 ──
+        ret, first_frame = cap.read()
+        if not ret:
+            raise RuntimeError(f"無法讀取影片第一幀：{video_path}")
+
+        face_cascade = cv2.CascadeClassifier(
+            cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+        )
+        gray = cv2.cvtColor(first_frame, cv2.COLOR_BGR2GRAY)
+        faces = face_cascade.detectMultiScale(
+            gray, scaleFactor=1.1, minNeighbors=5, minSize=(50, 50),
+        )
+
+        if len(faces) > 0:
+            # 取最大臉
+            fx, fy, fw, fh = max(faces, key=lambda f: f[2] * f[3])
+            # 頭部橢圓中心（略偏上方，涵蓋髮型）
+            head_cx = fx + fw // 2
+            head_cy = fy + fh // 2 - int(fh * 0.15)
+            # ★ 橢圓半徑要夠大，完全包覆頭部+頭髮+耳朵
+            # 這樣 mask=1.0 的區域涵蓋整顆頭，羽化過渡帶
+            # 落在肩膀/背景上（無臉部特徵 → 不會有殘影）
+            head_rx = int(fw * 1.4)
+            head_ry = int(fh * 1.3)
+            # 旋轉軸心在下巴/脖子處（自然的頭部旋轉支點）
+            rot_cx = float(head_cx)
+            rot_cy = float(fy + fh)
+            _logger.info(
+                "臉部偵測成功：bbox=(%d,%d,%d,%d) → "
+                "頭部中心=(%d,%d) 半徑=(%d,%d) 旋轉軸=(%d,%d)",
+                fx, fy, fw, fh, head_cx, head_cy,
+                head_rx, head_ry, int(rot_cx), int(rot_cy),
+            )
+        else:
+            # 降級：假設臉在畫面上半部中央
+            head_cx = w // 2
+            head_cy = h // 4
+            head_rx = w // 3
+            head_ry = h // 4
+            rot_cx = float(w // 2)
+            rot_cy = float(h // 2)
+            _logger.warning(
+                "未偵測到臉部，使用預設頭部區域："
+                "中心=(%d,%d) 半徑=(%d,%d)",
+                head_cx, head_cy, head_rx, head_ry,
+            )
+
+        # ── Step 2: 建立橢圓漸層遮罩 ──
+        # 頭部區域=1.0（完全套用旋轉），邊緣漸變到 0.0（保持原始）
+        mask = np.zeros((h, w), dtype=np.float32)
+        cv2.ellipse(
+            mask, (head_cx, head_cy), (head_rx, head_ry),
+            0, 0, 360, 1.0, -1,
+        )
+        # 高斯模糊實現羽化邊緣（適度模糊，避免銳利分界線但不要太寬）
+        blur_size = max(head_rx, head_ry) // 4 * 2 + 1  # 橢圓半徑的 1/4
+        blur_size = max(blur_size, 21)  # 最小 21
+        blur_size = min(blur_size, 101)  # 最大 101（避免過寬的過渡帶）
+        mask = cv2.GaussianBlur(mask, (blur_size, blur_size), blur_size / 4)
+        # 擴展到 3 通道
+        mask_3ch = np.stack([mask, mask, mask], axis=-1)
+
+        # ── Step 3: 逐幀處理 ──
+        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
+        output_path = video_path.with_name("motion_head.mp4")
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        writer = cv2.VideoWriter(str(output_path), fourcc, video_fps, (w, h))
+
+        for i in range(total_frames):
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            # 將影片幀 index 映射到 motion_fps 的參數 index
+            t = i / video_fps
+            param_idx = min(int(t * motion_fps), len(head_params) - 1)
+            pitch, yaw, roll = head_params[param_idx]
+
+            # 2D 仿射變換（以脖子為軸心旋轉）：
+            # - roll → 旋轉角度（頭部傾斜）
+            # - yaw → 水平平移（左右轉頭）
+            # - pitch → 垂直平移（抬低頭）
+            angle = roll
+            tx = yaw * 2.0
+            ty = -pitch * 1.5
+
+            M = cv2.getRotationMatrix2D((rot_cx, rot_cy), angle, 1.0)
+            M[0, 2] += tx
+            M[1, 2] += ty
+
+            # 旋轉整個畫面（暫存用）
+            rotated = cv2.warpAffine(
+                frame, M, (w, h),
+                borderMode=cv2.BORDER_REPLICATE,
+            )
+
+            # ★ 核心：用遮罩混合 — 頭部用旋轉版，背景用原始版
+            frame_f = frame.astype(np.float32)
+            rotated_f = rotated.astype(np.float32)
+            blended = rotated_f * mask_3ch + frame_f * (1.0 - mask_3ch)
+            writer.write(blended.astype(np.uint8))
+
+        cap.release()
+        writer.release()
+
+        # 用 ffmpeg 合併原始音軌 + H.264 重新編碼（mp4v 太大，Telegram 限 50MB）
+        final_path = video_path.with_name("motion_head_audio.mp4")
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(output_path),
+            "-i", str(video_path),
+            "-c:v", "libx264", "-crf", "23", "-preset", "fast",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "128k",
+            "-map", "0:v:0",
+            "-map", "1:a:0?",
+            str(final_path),
+        ]
+        try:
+            subprocess.run(
+                cmd, capture_output=True, timeout=600,
+                encoding="utf-8", errors="replace",
+            )
+        except Exception:
+            final_path = output_path
+
+        # 覆寫原始檔案
+        import os
+        if final_path.exists():
+            os.replace(str(final_path), str(video_path))
+        elif output_path.exists():
+            os.replace(str(output_path), str(video_path))
+
+        # 清理暫存
+        for tmp in [output_path, final_path]:
+            if tmp.exists() and tmp != video_path:
+                tmp.unlink(missing_ok=True)
+
+        return video_path
 
     def _vram_gate(self, checkpoint_name: str) -> None:
         """

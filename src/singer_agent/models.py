@@ -143,7 +143,7 @@ class ProjectState:
     composite_image: str            # Step 5 產出路徑
     precheck_result: PrecheckResult | None  # Step 6 產出
     final_video: str                # Step 7 產出路徑
-    render_mode: str                # "sadtalker" | "ffmpeg_static"
+    render_mode: str                # "edtalk" | "musetalk" | "liveportrait_musetalk" | "dry_run"
     error_message: str              # 錯誤訊息，無錯誤時為空字串
     created_at: str                 # 建立時間（ISO 8601）
     completed_at: str               # 完成時間（ISO 8601）

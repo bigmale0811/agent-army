@@ -3,7 +3,7 @@
 audio_preprocessor 模組測試。
 
 涵蓋：
-- mood_to_expression_scale（情緒映射）
+- mood_to_exp_type（V2.0 情緒映射）
 - separate_vocals（Demucs subprocess）
 - apply_noise_gate（ffmpeg agate）
 """
@@ -13,59 +13,61 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.singer_agent.audio_preprocessor import (
-    EMOTION_EXPRESSION_MAP,
-    DEFAULT_EXPRESSION_SCALE,
-    mood_to_expression_scale,
+    EMOTION_EDTALK_MAP,
+    DEFAULT_EXP_TYPE,
+    mood_to_exp_type,
     separate_vocals,
     apply_noise_gate,
 )
 
 
-# ─── mood_to_expression_scale ─────────────────────────────
+# ─── mood_to_exp_type ─────────────────────────────
 
 
-class TestMoodToExpressionScale:
-    """情緒 → expression_scale 映射測試。"""
+class TestMoodToExpType:
+    """情緒 → EDTalk exp_type 映射測試（V2.0）。"""
 
     def test_empty_string_returns_default(self):
-        assert mood_to_expression_scale("") == DEFAULT_EXPRESSION_SCALE
+        assert mood_to_exp_type("") == DEFAULT_EXP_TYPE
 
-    def test_sad_returns_low_scale(self):
-        result = mood_to_expression_scale("sad")
-        assert result == 0.5
+    def test_sad_returns_sad(self):
+        result = mood_to_exp_type("sad")
+        assert result == "sad"
 
-    def test_happy_returns_high_scale(self):
-        result = mood_to_expression_scale("happy")
-        assert result == 1.3
+    def test_happy_returns_happy(self):
+        result = mood_to_exp_type("happy")
+        assert result == "happy"
 
     def test_chinese_sad_keyword(self):
-        """繁體中文「感傷」應映射到低 scale。"""
-        result = mood_to_expression_scale("感傷")
-        assert result == 0.5
+        """繁體中文「感傷」應映射到 sad。"""
+        result = mood_to_exp_type("感傷")
+        assert result == "sad"
 
     def test_chinese_depressed_keyword(self):
-        """「情緒低落」應映射到 0.4。"""
-        result = mood_to_expression_scale("情緒低落")
-        assert result == 0.4
+        """「情緒低落」應映射到 sad。"""
+        result = mood_to_exp_type("情緒低落")
+        assert result == "sad"
 
     def test_mixed_english_keywords(self):
         """包含多個關鍵字時，取第一個匹配。"""
-        result = mood_to_expression_scale("sad and melancholic")
-        assert result == 0.5
+        result = mood_to_exp_type("sad and melancholic")
+        assert result == "sad"
 
     def test_unknown_mood_returns_default(self):
-        result = mood_to_expression_scale("completely random text")
-        assert result == DEFAULT_EXPRESSION_SCALE
+        result = mood_to_exp_type("completely random text")
+        assert result == DEFAULT_EXP_TYPE
 
     def test_case_insensitive(self):
         """英文大小寫不敏感。"""
-        result = mood_to_expression_scale("SAD")
-        assert result == 0.5
+        result = mood_to_exp_type("SAD")
+        assert result == "sad"
 
-    def test_all_english_keywords_mapped(self):
-        """確保所有英文關鍵字都有合法映射值。"""
-        for keyword, scale in EMOTION_EXPRESSION_MAP.items():
-            assert 0.0 < scale < 2.0, f"keyword={keyword}, scale={scale}"
+    def test_all_keywords_map_to_valid_exp_type(self):
+        """確保所有關鍵字都映射到合法的 EDTalk exp_type。"""
+        valid_types = {"angry", "contempt", "disgusted", "fear",
+                       "happy", "sad", "surprised", "neutral"}
+        for keyword, exp_type in EMOTION_EDTALK_MAP.items():
+            assert exp_type in valid_types, f"keyword={keyword}, exp_type={exp_type}"
 
 
 # ─── separate_vocals ──────────────────────────────────────

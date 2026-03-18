@@ -21,6 +21,19 @@ import re
 from typing import Any, Callable
 
 from src.singer_agent import config
+
+# 過濾 httpx 日誌中的 Bot Token（安全措施）
+class _TokenFilter(logging.Filter):
+    """過濾日誌中的 Telegram Bot Token，避免洩漏。"""
+    def filter(self, record: logging.LogRecord) -> bool:
+        if hasattr(record, 'msg') and isinstance(record.msg, str):
+            token = config.TELEGRAM_BOT_TOKEN
+            if token and token in record.msg:
+                record.msg = record.msg.replace(token, "***TOKEN***")
+        return True
+
+logging.getLogger("httpx").addFilter(_TokenFilter())
+logging.getLogger("httpcore").addFilter(_TokenFilter())
 from src.singer_agent.models import PipelineRequest
 from src.singer_agent.pipeline import Pipeline
 from src.singer_agent.project_store import ProjectStore
@@ -106,7 +119,7 @@ def make_progress_callback(
     """
     def _callback(step: int, description: str) -> None:
         """同步回調，內部透過 asyncio 安排非同步發送。"""
-        msg = f"📋 Step {step}/8: {description}"
+        msg = f"📋 Step {step}/10: {description}"
         try:
             loop = asyncio.get_running_loop()
             # 在已有事件迴圈中安排 coroutine
@@ -427,7 +440,6 @@ def _safe_filename(title: str, artist: str) -> str:
     Returns:
         安全的 mp4 檔名
     """
-    import re
     # 移除控制字元與 Telegram 不支援的特殊符號
     safe_title = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '', title).strip()
     safe_artist = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '', artist).strip()

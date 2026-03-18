@@ -50,6 +50,15 @@ SADTALKER_DIR = Path(os.environ.get("SADTALKER_DIR", "D:/Projects/SadTalker"))
 
 # EDTalk 安裝目錄（V2.0 核心影片引擎）
 EDTALK_DIR = Path(os.environ.get("EDTALK_DIR", "D:/Projects/EDTalk"))
+
+# Demucs 人聲分離使用的 Python（需含 torch + demucs）
+# 優先使用獨立設定，fallback 到 EDTalk venv（有 torch + CUDA）
+DEMUCS_PYTHON = Path(
+    os.environ.get(
+        "DEMUCS_PYTHON",
+        str(EDTALK_DIR / "edtalk_env" / "Scripts" / "python.exe"),
+    )
+)
 # EDTalk 虛擬環境 Python（含 torch + cu128）
 EDTALK_PYTHON = EDTALK_DIR / "edtalk_env" / "Scripts" / "python.exe"
 # EDTalk demo 腳本（支援 --exp_type 情緒標籤）
@@ -57,11 +66,28 @@ EDTALK_DEMO_SCRIPT = EDTALK_DIR / "demo_EDTalk_A_using_predefined_exp_weights.py
 # EDTalk 預設姿態影片
 EDTALK_POSE_VIDEO = EDTALK_DIR / "test_data" / "pose_source1.mp4"
 
-# 渲染引擎選擇（edtalk | musetalk | liveportrait_musetalk）
-# HIGH-02 修復：白名單驗證，非法值降級為預設 edtalk
-_VALID_RENDERERS: frozenset[str] = frozenset({"edtalk", "musetalk", "liveportrait_musetalk"})
+# 渲染引擎選擇（edtalk | musetalk | liveportrait_musetalk | float | wan_s2v）
+_VALID_RENDERERS: frozenset[str] = frozenset({
+    "edtalk", "musetalk", "liveportrait_musetalk", "float", "wan_s2v",
+})
 _raw_renderer: str = os.environ.get("SINGER_RENDERER", "edtalk")
 SINGER_RENDERER: str = _raw_renderer if _raw_renderer in _VALID_RENDERERS else "edtalk"
+
+# FLOAT 安裝目錄（Flow Matching 人像動畫引擎）
+FLOAT_DIR = Path(os.environ.get("FLOAT_DIR", "D:/Projects/FLOAT"))
+FLOAT_PYTHON = Path(os.environ.get(
+    "FLOAT_PYTHON",
+    str(FLOAT_DIR / "float_env" / "Scripts" / "python.exe"),
+))
+
+# Wan2.1 / Wan2.2 設定（影片生成引擎）
+WAN_DIR = Path(os.environ.get("WAN_DIR", "D:/Projects/Wan2.1"))
+WAN_PYTHON = Path(os.environ.get(
+    "WAN_PYTHON",
+    str(WAN_DIR / "wan_env" / "Scripts" / "python.exe"),
+))
+# Wan2.2-S2V 模式：音訊驅動影片（Phase 3 使用）
+WAN_S2V_DIR = Path(os.environ.get("WAN_S2V_DIR", "D:/Projects/Wan2.2-S2V"))
 
 # LivePortrait 安裝目錄（V3.0 表情動態引擎）
 LIVEPORTRAIT_DIR = Path(os.environ.get("LIVEPORTRAIT_DIR", "D:/Projects/LivePortrait"))

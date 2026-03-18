@@ -184,7 +184,7 @@ def _handle_run(args: argparse.Namespace) -> int:
     # 建立並執行 Pipeline
     # 進度回調：在 CLI 模式下直接印出步驟資訊
     def progress_callback(step: int, description: str) -> None:
-        print(f"[{step}/8] {description}")
+        print(f"[{step}/10] {description}")
 
     pipeline = Pipeline(
         character_image=character_image,

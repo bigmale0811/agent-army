@@ -156,19 +156,6 @@ def mood_to_liveportrait_params(mood_hint: str) -> LivePortraitExpression:
     )
     return expression
 
-# V1.0 相容：保留 expression_scale 映射（供舊測試使用）
-EMOTION_EXPRESSION_MAP: dict[str, float] = {
-    "sad": 0.5, "melancholic": 0.5, "sorrowful": 0.4,
-    "depressed": 0.4, "nostalgic": 0.6, "gentle": 0.7,
-    "neutral": 1.0, "calm": 0.8, "happy": 1.3,
-    "excited": 1.5, "energetic": 1.4, "angry": 1.2,
-    "passionate": 1.3, "感傷": 0.5, "悲傷": 0.4,
-    "低落": 0.4, "憂鬱": 0.4, "懷舊": 0.6,
-    "溫柔": 0.7, "平靜": 0.8, "開心": 1.3,
-    "興奮": 1.5, "熱情": 1.3, "憤怒": 1.2,
-    "情緒低落": 0.4,
-}
-DEFAULT_EXPRESSION_SCALE = 1.0
 
 
 def mood_to_exp_type(mood_hint: str) -> str:
@@ -200,17 +187,6 @@ def mood_to_exp_type(mood_hint: str) -> str:
     return DEFAULT_EXP_TYPE
 
 
-def mood_to_expression_scale(mood_hint: str) -> float:
-    """V1.0 相容函式：從情緒描述推斷 expression_scale。"""
-    if not mood_hint:
-        return DEFAULT_EXPRESSION_SCALE
-    lower = mood_hint.lower()
-    for keyword, scale in EMOTION_EXPRESSION_MAP.items():
-        if keyword in lower:
-            return scale
-    return DEFAULT_EXPRESSION_SCALE
-
-
 def separate_vocals(
     audio_path: Path,
     output_dir: Path,
@@ -236,10 +212,9 @@ def separate_vocals(
         _logger.info("dry_run 模式：跳過人聲分離")
         return audio_path
 
-    # 使用 SadTalker 的 venv Python（確保有 torch + CUDA）
+    # 使用設定的 Demucs Python（需含 torch + CUDA）
     if python_bin is None:
-        sadtalker_python = config.SADTALKER_DIR / "venv" / "Scripts" / "python.exe"
-        python_bin = str(sadtalker_python)
+        python_bin = str(config.DEMUCS_PYTHON)
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -320,15 +295,15 @@ def apply_noise_gate(
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # agate 參數說明：
-    # threshold: 閘門觸發閾值（線性）
-    # ratio: 衰減比（100 = 幾乎完全靜音）
-    # range: 最大增益衰減 dB（-100 = 完全靜音）
-    # attack: 開啟速度 ms（5ms 快速反應）
-    # release: 關閉速度 ms（50ms 自然衰減）
+    # agate 參數說明（ffmpeg 8.x）：
+    # threshold: 閘門觸發閾值（線性 0~1）
+    # ratio: 衰減比（1~9000，越高越靜音）
+    # range: 最大增益衰減（線性 0~1，越小越靜音）
+    # attack: 開啟速度 ms（0.01~9000）
+    # release: 關閉速度 ms（0.01~9000）
     af_filter = (
-        f"agate=threshold={threshold}:ratio=100"
-        f":range=-100:attack=5:release=50"
+        f"agate=threshold={threshold}:ratio=9000"
+        f":range=0:attack=5:release=50"
     )
 
     cmd = [
